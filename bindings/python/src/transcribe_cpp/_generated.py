@@ -13,7 +13,7 @@ import ctypes as _c
 # Stable digest of the ABI surface below (structs, enums, macros, layout,
 # prototypes). A native provider package echoes this back so the API
 # package can reject an ABI-mismatched provider before dlopen.
-PUBLIC_HEADER_HASH = "a3b263c9e59d3ca9"
+PUBLIC_HEADER_HASH = "c4b19911cc9a09a3"
 
 # === enum constants ===
 TRANSCRIBE_OK = 0
@@ -118,7 +118,7 @@ TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW = 1464224592
 TRANSCRIBE_EXT_KIND_SORTFORMER_STREAM = 1414743635
 TRANSCRIBE_EXT_KIND_VOXTRAL_REALTIME_STREAM = 1414746710
 TRANSCRIBE_EXT_KIND_WHISPER_RUN = 1314015319
-TRANSCRIBE_GRAIN_CONTRACT_REVISION = 1
+TRANSCRIBE_GRAIN_CONTRACT_REVISION = 2
 
 # === structs ===
 class transcribe_ext(_c.Structure):

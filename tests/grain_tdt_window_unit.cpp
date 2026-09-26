@@ -2,6 +2,7 @@
 // alternate production decoder: assertions freeze the existing Fluid policy.
 #include "arch/parakeet/decoder.h"
 #include "arch/parakeet/parakeet.h"
+#include "ggml-backend-impl.h"
 #include "transcribe-arch.h"
 #include "transcribe-backend.h"
 #include "transcribe/parakeet.h"
@@ -114,6 +115,112 @@ void check_case(int token, int duration, int frames, bool tail, size_t count) {
     }
 }
 
+// Wrap the real CPU device only inside this single-threaded test. Every graph
+// except the selected failed dispatch still runs the actual ggml operations;
+// no production hook, environment variable or alternate decoder is added.
+class ComputeFault {
+    ggml_backend_dev_t                            device;
+    decltype(ggml_backend_device_i::init_backend) original_init;
+    decltype(ggml_backend_i::graph_compute)       original_compute = nullptr;
+    int                                           fail_on;
+    int                                           calls  = 0;
+    static inline ComputeFault *                  active = nullptr;
+
+    static ggml_backend_t init(ggml_backend_dev_t dev, const char * params) {
+        ggml_backend_t backend = active->original_init(dev, params);
+        if (backend != nullptr) {
+            active->original_compute     = backend->iface.graph_compute;
+            backend->iface.graph_compute = compute;
+        }
+        return backend;
+    }
+
+    static ggml_status compute(ggml_backend_t backend, ggml_cgraph * graph) {
+        if (++active->calls == active->fail_on) {
+            return GGML_STATUS_FAILED;
+        }
+        return active->original_compute(backend, graph);
+    }
+
+  public:
+    ComputeFault(ggml_backend_dev_t dev, int dispatch) :
+        device(dev),
+        original_init(dev->iface.init_backend),
+        fail_on(dispatch) {
+        active                     = this;
+        device->iface.init_backend = init;
+    }
+
+    ~ComputeFault() {
+        device->iface.init_backend = original_init;
+        active                     = nullptr;
+    }
+
+    ComputeFault(const ComputeFault &)             = delete;
+    ComputeFault & operator=(const ComputeFault &) = delete;
+
+    bool triggered() const { return calls >= fail_on; }
+};
+
+void check_compute_failures() {
+    HostDecoderWeights w;
+    CHECK(make_weights(w, 0, 1));
+    if (!w.predictor.lstm_ready || !w.joint.w_ready) {
+        return;
+    }
+    const float encoder[16] = {};
+    for (int mode = 0; mode < 4; ++mode) {
+        if (mode >= 2) {
+            // RNN-T advances only on blank with an unlimited symbol budget.
+            // Use a terminating blank fixture and the actual RNN-T head gate.
+            w.head_kind = HostHeadKind::RNNT;
+            std::vector<float> bias(static_cast<size_t>(w.joint.joint_n), -10.0f);
+            bias[static_cast<size_t>(w.blank_id)] = 10.0f;
+            ggml_backend_tensor_set(w.joint.gw_b, bias.data(), 0, bias.size() * sizeof(float));
+        }
+        const auto decode = [&](std::vector<TdtToken> & out) {
+            if (mode == 0) {
+                return decode_tdt_greedy(w, encoder, 4, 4, 1, out);
+            }
+            if (mode == 1) {
+                return decode_tdt_fluid_window(w, encoder, 4, 4, 1, true, out);
+            }
+            if (mode == 2) {
+                return decode_rnnt_greedy(w, encoder, 4, 4, 1, out);
+            }
+            LstmState state;
+            state.reset(1, 4);
+            int last_token = -1;
+            return decode_rnnt_greedy_streaming(w, encoder, 4, 4, state, last_token, 0, 1, out);
+        };
+        std::vector<TdtToken> expected;
+        CHECK(decode(expected) == TRANSCRIBE_OK);
+        // Dispatches 10/11 enter the custom final-tail joint/predictor path.
+        const int dispatches[] = { 1, 2, 3, 4, 5, 10, 11 };
+        for (int dispatch : dispatches) {
+            if (mode != 1 && dispatch > 5) {
+                continue;
+            }
+            std::vector<TdtToken> out;
+            {
+                ComputeFault fault(ggml_backend_get_device(w.predictor.lstm_w_backend), dispatch);
+                CHECK(decode(out) == TRANSCRIBE_ERR_BACKEND);
+                CHECK(fault.triggered());
+                if (dispatch <= 3) {
+                    CHECK(out.empty());  // Projection/predictor/joint fails before emission.
+                }
+            }
+            out.clear();
+            CHECK(decode(out) == TRANSCRIBE_OK);  // Error cleanup permits a fresh decode.
+            CHECK(out.size() == expected.size());
+            for (size_t i = 0; i < out.size() && i < expected.size(); ++i) {
+                CHECK(out[i].id == expected[i].id && out[i].step_at_emit == expected[i].step_at_emit);
+                CHECK(out[i].p == expected[i].p && out[i].duration_frames == expected[i].duration_frames);
+            }
+        }
+    }
+}
+
 void check_model_gates() {
     ParakeetModel model;
     model.arch                       = &arch;
@@ -168,6 +275,7 @@ void check_model_gates() {
 
 int main() {
     check_model_gates();
+    check_compute_failures();
     check_case(2, 0, 4, false, 0);      // Blank zero-duration must advance.
     check_case(2, 0, 4, true, 0);       // Tail silence terminates after bounded blanks.
     check_case(0, 0, 4, false, 7);      // Repeated zero-duration token forces advance.

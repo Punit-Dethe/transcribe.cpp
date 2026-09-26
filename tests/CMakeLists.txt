@@ -92,7 +92,7 @@ add_test(NAME transcribe_grain_detokenize_unit COMMAND transcribe_grain_detokeni
 
 add_executable(transcribe_grain_tdt_window_unit grain_tdt_window_unit.cpp)
 target_link_libraries(transcribe_grain_tdt_window_unit PRIVATE transcribe ggml)
-target_include_directories(transcribe_grain_tdt_window_unit PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(transcribe_grain_tdt_window_unit PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/ggml/src)
 transcribe_apply_warnings(transcribe_grain_tdt_window_unit)
 add_test(NAME transcribe_grain_tdt_window_unit COMMAND transcribe_grain_tdt_window_unit)
 #

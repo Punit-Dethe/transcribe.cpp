@@ -798,7 +798,8 @@ namespace {
 // step's (h, c) into new_state, returns a borrowed pointer into
 // new_state.h.back(). Feeds prev state + embedding into the resident
 // per-call graph, computes, reads new state back into the host LstmState.
-// Caller guarantees g.ready and that new_state is sized to (L, H).
+// Caller guarantees g.ready and that new_state is sized to (L, H). Returns
+// nullptr if the graph compute fails.
 const float * predictor_step_ggml(const HostPredictor & predictor,
                                   PredGraph &           g,
                                   int                   last_token,
@@ -825,7 +826,10 @@ const float * predictor_step_ggml(const HostPredictor & predictor,
         ggml_backend_tensor_set(g.pc[l], prev_state.c[static_cast<size_t>(l)].data(), 0, hb);
     }
 
-    ggml_backend_graph_compute(g.backend, g.graph);
+    if (const ggml_status gs = ggml_backend_graph_compute(g.backend, g.graph); gs != GGML_STATUS_SUCCESS) {
+        log_msg(TRANSCRIBE_LOG_LEVEL_ERROR, "parakeet decoder: predictor compute failed (%d)", static_cast<int>(gs));
+        return nullptr;
+    }
 
     for (int l = 0; l < g.L; ++l) {
         ggml_backend_tensor_get(g.nh[l], new_state.h[static_cast<size_t>(l)].data(), 0, hb);
@@ -844,8 +848,9 @@ const float * predictor_step_ggml(const HostPredictor & predictor,
 //   summed    = enc_proj + pred_proj             [joint_h]
 //   activated = activation(summed)               [joint_h]
 //   logits    = out_w @ activated   + out_b      [joint_n]
-// Activation is one of {relu, sigmoid, tanh} (loader allow-list).
-void joint_step(const HostJoint &    j,
+// Activation is one of {relu, sigmoid, tanh} (loader allow-list). Returns
+// false if the graph compute fails.
+bool joint_step(const HostJoint &    j,
                 const JointGraph &   g,
                 const float *        enc_proj,
                 const float *        pred_state,
@@ -857,7 +862,10 @@ void joint_step(const HostJoint &    j,
     // Full joint on the shared decoder pool, one graph, one dispatch.
     ggml_backend_tensor_set(g.pred_in, pred_state, 0, static_cast<size_t>(j.pred_hidden) * sizeof(float));
     ggml_backend_tensor_set(g.enc_in, enc_proj, 0, static_cast<size_t>(j.joint_h) * sizeof(float));
-    ggml_backend_graph_compute(g.backend, g.graph);
+    if (const ggml_status gs = ggml_backend_graph_compute(g.backend, g.graph); gs != GGML_STATUS_SUCCESS) {
+        log_msg(TRANSCRIBE_LOG_LEVEL_ERROR, "parakeet decoder: joint compute failed (%d)", static_cast<int>(gs));
+        return false;
+    }
     ggml_backend_tensor_get(g.logits, out_logits.data(), 0, static_cast<size_t>(j.joint_n) * sizeof(float));
 
     // log_softmax over the full joint output matches NeMo's CPU-inference
@@ -883,6 +891,7 @@ void joint_step(const HostJoint &    j,
             out_logits[i] -= log_sum;
         }
     }
+    return true;
 }
 
 // Compute the per-utterance encoder projection out[T, joint_h] =
@@ -1095,7 +1104,10 @@ transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
         const int64_t t0 = ggml_time_us();
         const float * decoder_out;
         if (predictor_dirty) {
-            decoder_out     = predictor_step_ggml(w.predictor, pg, last_token, state, next_state, scratch_x);
+            decoder_out = predictor_step_ggml(w.predictor, pg, last_token, state, next_state, scratch_x);
+            if (decoder_out == nullptr) {
+                return TRANSCRIBE_ERR_BACKEND;
+            }
             predictor_dirty = false;
         } else {
             decoder_out = next_state.h.back().data();
@@ -1104,7 +1116,9 @@ transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
 
         // ----- Joint (using precomputed encoder projection) -----
         const float * enc_proj = enc_proj_all.data() + static_cast<size_t>(step) * static_cast<size_t>(joint_h);
-        joint_step(w.joint, jg, enc_proj, decoder_out, logits);
+        if (!joint_step(w.joint, jg, enc_proj, decoder_out, logits)) {
+            return TRANSCRIBE_ERR_BACKEND;
+        }
         const int64_t t2 = ggml_time_us();
         t_pred_us += t1 - t0;
         t_joint_us += t2 - t1;
@@ -1208,10 +1222,9 @@ transcribe_status decode_tdt_fluid_window(const HostDecoderWeights & w,
                                           int                        n_threads,
                                           bool                       finalize_tail,
                                           std::vector<TdtToken> &    out_tokens) {
-    // Upstream 0.2.4 makes this helper fallible. Ignoring its new bool return
-    // would compile and lose backend errors: require an explicit error-path
-    // port when updating this private dependency. No runtime cost.
-    static_assert(std::is_same<decltype(&joint_step), void (*)(const HostJoint &, const JointGraph &, const float *,
+    // The reviewed 0.2.4 compute-failure fix is backported below. Require an
+    // explicit error-path port if this private dependency changes again.
+    static_assert(std::is_same<decltype(&joint_step), bool (*)(const HostJoint &, const JointGraph &, const float *,
                                                                const float *, std::vector<float> &)>::value,
                   "Port Fluid decoder error propagation when the upstream joint helper changes");
     if (enc_out == nullptr || T_enc <= 0 || d_enc <= 0 || d_enc != w.joint.d_enc || w.tdt_durations.empty()) {
@@ -1272,18 +1285,23 @@ transcribe_status decode_tdt_fluid_window(const HostDecoderWeights & w,
     auto predictor = [&]() -> const float * {
         if (predictor_dirty) {
             const float * out = predictor_step_ggml(w.predictor, pg, last_token, state, next_state, scratch_x);
-            predictor_dirty   = false;
+            if (out != nullptr) {
+                predictor_dirty = false;
+            }
             return out;
         }
         return next_state.h.back().data();
     };
 
-    auto decide = [&](int frame, const float * decoder_out, int & token, int & duration) {
+    auto decide = [&](int frame, const float * decoder_out, int & token, int & duration) -> bool {
         const float * enc_proj = enc_proj_all.data() + static_cast<size_t>(frame) * static_cast<size_t>(joint_h);
-        joint_step(w.joint, jg, enc_proj, decoder_out, logits);
+        if (!joint_step(w.joint, jg, enc_proj, decoder_out, logits)) {
+            return false;
+        }
         token              = argmax_range(logits.data(), n_token_cls);
         const int decision = argmax_range(logits.data() + n_token_cls, n_dur);
         duration           = w.tdt_durations[static_cast<size_t>(decision)];
+        return true;
     };
 
     auto emit = [&](int token, int frame, int duration) {
@@ -1303,7 +1321,9 @@ transcribe_status decode_tdt_fluid_window(const HostDecoderWeights & w,
         const float * decoder_out = predictor();
         int           token       = blank_id;
         int           duration    = 0;
-        decide(step, decoder_out, token, duration);
+        if (decoder_out == nullptr || !decide(step, decoder_out, token, duration)) {
+            return TRANSCRIBE_ERR_BACKEND;
+        }
 
         int emission_step = step;
         if (token != blank_id && duration == 0 && emission_step == last_emission_step && emissions_at_step >= 1) {
@@ -1319,7 +1339,9 @@ transcribe_status decode_tdt_fluid_window(const HostDecoderWeights & w,
         while (step < T_enc && token == blank_id && iter < max_iters) {
             ++iter;
             emission_step = step;
-            decide(step, decoder_out, token, duration);
+            if (!decide(step, decoder_out, token, duration)) {
+                return TRANSCRIBE_ERR_BACKEND;
+            }
             if (token == blank_id && duration == 0) {
                 duration = 1;
             }
@@ -1367,7 +1389,9 @@ transcribe_status decode_tdt_fluid_window(const HostDecoderWeights & w,
             const int frame    = frame_variations[additional_steps % 3];
             int       token    = blank_id;
             int       duration = 0;
-            decide(frame, decoder_out, token, duration);
+            if (decoder_out == nullptr || !decide(frame, decoder_out, token, duration)) {
+                return TRANSCRIBE_ERR_BACKEND;
+            }
             if (token == blank_id) {
                 ++consecutive_blanks;
             } else {
@@ -1479,7 +1503,10 @@ transcribe_status decode_rnnt_greedy(const HostDecoderWeights & w,
         const int64_t t0 = ggml_time_us();
         const float * decoder_out;
         if (predictor_dirty) {
-            decoder_out     = predictor_step_ggml(w.predictor, pg, last_token, state, next_state, scratch_x);
+            decoder_out = predictor_step_ggml(w.predictor, pg, last_token, state, next_state, scratch_x);
+            if (decoder_out == nullptr) {
+                return TRANSCRIBE_ERR_BACKEND;
+            }
             predictor_dirty = false;
         } else {
             decoder_out = next_state.h.back().data();
@@ -1487,7 +1514,9 @@ transcribe_status decode_rnnt_greedy(const HostDecoderWeights & w,
         const int64_t t1 = ggml_time_us();
 
         const float * enc_proj = enc_proj_all.data() + static_cast<size_t>(step) * static_cast<size_t>(joint_h);
-        joint_step(w.joint, jg, enc_proj, decoder_out, logits);
+        if (!joint_step(w.joint, jg, enc_proj, decoder_out, logits)) {
+            return TRANSCRIBE_ERR_BACKEND;
+        }
         const int64_t t2 = ggml_time_us();
         t_pred_us += t1 - t0;
         t_joint_us += t2 - t1;
@@ -1657,14 +1686,19 @@ transcribe_status decode_rnnt_greedy_streaming(const HostDecoderWeights & w,
 
         const float * decoder_out;
         if (predictor_dirty) {
-            decoder_out     = predictor_step_ggml(w.predictor, pg, last_token, state, next_state, scratch_x);
+            decoder_out = predictor_step_ggml(w.predictor, pg, last_token, state, next_state, scratch_x);
+            if (decoder_out == nullptr) {
+                return TRANSCRIBE_ERR_BACKEND;
+            }
             predictor_dirty = false;
         } else {
             decoder_out = next_state.h.back().data();
         }
 
         const float * enc_proj = enc_proj_all.data() + static_cast<size_t>(step) * static_cast<size_t>(joint_h);
-        joint_step(w.joint, jg, enc_proj, decoder_out, logits);
+        if (!joint_step(w.joint, jg, enc_proj, decoder_out, logits)) {
+            return TRANSCRIBE_ERR_BACKEND;
+        }
 
         const float * token_logits = logits.data();
         const int     pred_token   = argmax_range(token_logits, n_token_cls);

@@ -214,8 +214,8 @@ struct TdtToken {
 // Outputs:
 //   out_tokens - appended with one TdtToken per non-blank emission
 //
-// Returns TRANSCRIBE_OK on success; cannot fail except via invalid args
-// (validated by the family driver before this is called).
+// Returns TRANSCRIBE_OK on success, or an invalid-argument/backend error.
+// Failed predictor/joint dispatches must never be consumed as valid output.
 transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
                                     const float *              enc_out,
                                     int                        T_enc,

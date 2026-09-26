@@ -336,7 +336,7 @@ TRANSCRIBE_API const char * transcribe_version_commit(void);
  * Git metadata; present in source-archive builds too. Bump the revision and
  * identity when the detokenize/PKFW semantics change. String results borrow
  * static storage. Queries allocate nothing and never initialize backends. */
-#define TRANSCRIBE_GRAIN_CONTRACT_REVISION 1
+#define TRANSCRIBE_GRAIN_CONTRACT_REVISION 2
 #define TRANSCRIBE_GRAIN_PATCH_ID          "grain-flow-v1"
 TRANSCRIBE_API uint32_t     transcribe_grain_contract_revision(void);
 TRANSCRIBE_API const char * transcribe_grain_patch_id(void);
