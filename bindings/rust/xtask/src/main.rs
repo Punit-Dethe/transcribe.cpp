@@ -53,6 +53,19 @@ fn run_bindgen(check: bool) -> ExitCode {
             println!("xtask: {GENERATED} is up to date");
             ExitCode::SUCCESS
         } else {
+            if let Some((index, (old, new))) = committed
+                .lines()
+                .zip(generated.lines())
+                .enumerate()
+                .find(|(_, (old, new))| old != new)
+            {
+                eprintln!(
+                    "first FFI difference at line {}:\n  committed: {}\n  generated: {}",
+                    index + 1,
+                    old,
+                    new
+                );
+            }
             eprintln!(
                 "xtask: {GENERATED} is STALE.\n\
                  The public header or its ABI digest changed. Regenerate with:\n\
@@ -114,6 +127,16 @@ fn generate(root: &Path) -> String {
          /// gate and the CI drift check both anchor on this value.\n\
          pub const PUBLIC_HEADER_HASH: &str = \"{abihash}\";\n\
          \n"
+    );
+    // Clang chooses signed int for C enums under MSVC and unsigned int on
+    // some Unix targets. Our public enums have an int-sized ABI and all named
+    // values fit signed int (transcribe.cpp also reads them as raw int). Use
+    // one representation for their transparent bindgen newtypes; their bit
+    // layout and call ABI are identical. This does not rewrite struct fields
+    // or ordinary uint32_t parameters. Runtime size/alignment checks remain.
+    let bindings = bindings.to_string().replace(
+        "(pub ::std::os::raw::c_uint);",
+        "(pub ::std::os::raw::c_int);",
     );
     format!("{banner}{bindings}").replace("\r\n", "\n")
 }
