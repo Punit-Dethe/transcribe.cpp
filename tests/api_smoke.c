@@ -114,6 +114,12 @@ static void test_version(void) {
     const char * commit = transcribe_version_commit();
     CHECK(commit != NULL);
     CHECK(commit[0] != '\0');
+    CHECK(transcribe_grain_contract_revision() == TRANSCRIBE_GRAIN_CONTRACT_REVISION);
+    CHECK(strcmp(transcribe_grain_patch_id(), TRANSCRIBE_GRAIN_PATCH_ID) == 0);
+    const char * hash = transcribe_runtime_header_hash();
+    CHECK(hash != NULL);
+    CHECK(strlen(hash) == 16);
+    CHECK(strspn(hash, "0123456789abcdef") == 16);
 }
 
 static void test_abi_metadata(void) {
@@ -126,6 +132,10 @@ static void test_abi_metadata(void) {
     CHECK(transcribe_abi_struct_size(TRANSCRIBE_ABI_SEGMENT) == sizeof(struct transcribe_segment));
     CHECK(transcribe_abi_struct_size(TRANSCRIBE_ABI_SPEAKER_SEGMENT) == sizeof(struct transcribe_speaker_segment));
     CHECK(transcribe_abi_struct_align(TRANSCRIBE_ABI_SPEAKER_SEGMENT) == _Alignof(struct transcribe_speaker_segment));
+    CHECK(transcribe_abi_struct_size(TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT) ==
+          sizeof(struct transcribe_parakeet_tdt_window_ext));
+    CHECK(transcribe_abi_struct_align(TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT) ==
+          _Alignof(struct transcribe_parakeet_tdt_window_ext));
     CHECK(transcribe_abi_struct_size((transcribe_abi_struct) 9999) == 0);
     CHECK(transcribe_abi_struct_align((transcribe_abi_struct) 9999) == 0);
 

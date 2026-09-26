@@ -332,6 +332,17 @@ TRANSCRIBE_API const char * transcribe_version(void);
  * tree carried no git metadata (e.g. an unpacked source tarball). */
 TRANSCRIBE_API const char * transcribe_version_commit(void);
 
+/* Grain's additive native contract. Independent of the upstream version and
+ * Git metadata; present in source-archive builds too. Bump the revision and
+ * identity when the detokenize/PKFW semantics change. String results borrow
+ * static storage. Queries allocate nothing and never initialize backends. */
+#define TRANSCRIBE_GRAIN_CONTRACT_REVISION 1
+#define TRANSCRIBE_GRAIN_PATCH_ID          "grain-flow-v1"
+TRANSCRIBE_API uint32_t     transcribe_grain_contract_revision(void);
+TRANSCRIBE_API const char * transcribe_grain_patch_id(void);
+/* Semantic digest of the public headers compiled into this library. */
+TRANSCRIBE_API const char * transcribe_runtime_header_hash(void);
+
 /* ----------------------------------------------------------------------- */
 /* ABI metadata                                                            */
 /* ----------------------------------------------------------------------- */
@@ -349,21 +360,22 @@ TRANSCRIBE_API const char * transcribe_version_commit(void);
  * is append-only; do not renumber existing values.
  */
 typedef enum {
-    TRANSCRIBE_ABI_MODEL_LOAD_PARAMS = 0,
-    TRANSCRIBE_ABI_SESSION_PARAMS    = 1,
-    TRANSCRIBE_ABI_RUN_PARAMS        = 2,
-    TRANSCRIBE_ABI_STREAM_PARAMS     = 3,
-    TRANSCRIBE_ABI_CAPABILITIES      = 4,
-    TRANSCRIBE_ABI_TIMINGS           = 5,
-    TRANSCRIBE_ABI_SEGMENT           = 6,
-    TRANSCRIBE_ABI_WORD              = 7,
-    TRANSCRIBE_ABI_TOKEN             = 8,
-    TRANSCRIBE_ABI_STREAM_UPDATE     = 9,
-    TRANSCRIBE_ABI_STREAM_TEXT       = 10,
-    TRANSCRIBE_ABI_SESSION_LIMITS    = 11,
-    TRANSCRIBE_ABI_EXT               = 12,
-    TRANSCRIBE_ABI_DEVICE_INFO       = 13,
-    TRANSCRIBE_ABI_SPEAKER_SEGMENT   = 14,
+    TRANSCRIBE_ABI_MODEL_LOAD_PARAMS       = 0,
+    TRANSCRIBE_ABI_SESSION_PARAMS          = 1,
+    TRANSCRIBE_ABI_RUN_PARAMS              = 2,
+    TRANSCRIBE_ABI_STREAM_PARAMS           = 3,
+    TRANSCRIBE_ABI_CAPABILITIES            = 4,
+    TRANSCRIBE_ABI_TIMINGS                 = 5,
+    TRANSCRIBE_ABI_SEGMENT                 = 6,
+    TRANSCRIBE_ABI_WORD                    = 7,
+    TRANSCRIBE_ABI_TOKEN                   = 8,
+    TRANSCRIBE_ABI_STREAM_UPDATE           = 9,
+    TRANSCRIBE_ABI_STREAM_TEXT             = 10,
+    TRANSCRIBE_ABI_SESSION_LIMITS          = 11,
+    TRANSCRIBE_ABI_EXT                     = 12,
+    TRANSCRIBE_ABI_DEVICE_INFO             = 13,
+    TRANSCRIBE_ABI_SPEAKER_SEGMENT         = 14,
+    TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT = 15,
 } transcribe_abi_struct;
 
 /* sizeof / alignof of the selected public struct, or 0 for an unknown id.

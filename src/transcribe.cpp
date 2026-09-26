@@ -27,6 +27,7 @@
 #include "transcribe-path.h"
 #include "transcribe-session.h"
 #include "transcribe-tokenizer.h"
+#include "transcribe/parakeet.h"
 #include "transcribe/whisper.h"
 
 #if defined(TRANSCRIBE_GGML_BACKEND_DL) && defined(_WIN32)
@@ -177,6 +178,19 @@ extern "C" const char * transcribe_version_commit(void) {
     return TRANSCRIBE_COMMIT;
 }
 
+// Pure static queries: nothrow by construction, including archive builds.
+extern "C" uint32_t transcribe_grain_contract_revision(void) {
+    return TRANSCRIBE_GRAIN_CONTRACT_REVISION;
+}
+
+extern "C" const char * transcribe_grain_patch_id(void) {
+    return TRANSCRIBE_GRAIN_PATCH_ID;
+}
+
+extern "C" const char * transcribe_runtime_header_hash(void) {
+    return TRANSCRIBE_HEADER_HASH;
+}
+
 // Raw enum reads at the public ABI boundary
 //
 // C callers can store ANY int in an enum-typed ABI field; in C++ loading an
@@ -230,6 +244,8 @@ extern "C" size_t transcribe_abi_struct_size(transcribe_abi_struct which) {
             return sizeof(struct transcribe_device_info);
         case TRANSCRIBE_ABI_SPEAKER_SEGMENT:
             return sizeof(struct transcribe_speaker_segment);
+        case TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT:
+            return sizeof(struct transcribe_parakeet_tdt_window_ext);
     }
     return 0;  // unknown id: "cannot verify", never a real size
 }
@@ -266,6 +282,8 @@ extern "C" size_t transcribe_abi_struct_align(transcribe_abi_struct which) {
             return alignof(struct transcribe_device_info);
         case TRANSCRIBE_ABI_SPEAKER_SEGMENT:
             return alignof(struct transcribe_speaker_segment);
+        case TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT:
+            return alignof(struct transcribe_parakeet_tdt_window_ext);
     }
     return 0;
 }

@@ -290,6 +290,7 @@ pub enum AbiStruct {
     Ext,
     DeviceInfo,
     SpeakerSegment,
+    ParakeetTdtWindowExt,
 }
 
 impl AbiStruct {
@@ -311,6 +312,7 @@ impl AbiStruct {
             AbiStruct::Ext => A::TRANSCRIBE_ABI_EXT,
             AbiStruct::DeviceInfo => A::TRANSCRIBE_ABI_DEVICE_INFO,
             AbiStruct::SpeakerSegment => A::TRANSCRIBE_ABI_SPEAKER_SEGMENT,
+            AbiStruct::ParakeetTdtWindowExt => A::TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT,
         }
     }
 }

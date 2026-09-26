@@ -83,6 +83,18 @@ endif()
 # -----------------------------------------------------------------------------
 # Backend classification unit test
 # -----------------------------------------------------------------------------
+
+add_executable(transcribe_grain_detokenize_unit grain_detokenize_unit.cpp)
+target_link_libraries(transcribe_grain_detokenize_unit PRIVATE transcribe ggml)
+target_include_directories(transcribe_grain_detokenize_unit PRIVATE ${CMAKE_SOURCE_DIR}/src)
+transcribe_apply_warnings(transcribe_grain_detokenize_unit)
+add_test(NAME transcribe_grain_detokenize_unit COMMAND transcribe_grain_detokenize_unit)
+
+add_executable(transcribe_grain_tdt_window_unit grain_tdt_window_unit.cpp)
+target_link_libraries(transcribe_grain_tdt_window_unit PRIVATE transcribe ggml)
+target_include_directories(transcribe_grain_tdt_window_unit PRIVATE ${CMAKE_SOURCE_DIR}/src)
+transcribe_apply_warnings(transcribe_grain_tdt_window_unit)
+add_test(NAME transcribe_grain_tdt_window_unit COMMAND transcribe_grain_tdt_window_unit)
 #
 # Covers the pure backend-kind mapping used by the runtime backend selector.
 # This keeps vendor registry names such as ggml Metal's "MTL" tested without

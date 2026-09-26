@@ -129,6 +129,7 @@ impl Device {
 /// availability, or load models; the native registry does not support racing
 /// registration against those operations.
 pub fn init_backends(dir: impl AsRef<Path>) -> Result<()> {
+    crate::version::ensure_compatible()?;
     let dir = dir.as_ref();
     // Pass the path bytes through faithfully (Unix) / reject non-UTF-8 (Windows),
     // matching model loading — never lossily mangle a path with to_string_lossy.
@@ -152,6 +153,7 @@ pub fn init_backends(dir: impl AsRef<Path>) -> Result<()> {
 /// complete before other threads enumerate devices or query backend
 /// availability; see [`init_backends`] for the registry-ordering contract.
 pub fn init_backends_default() -> Result<()> {
+    crate::version::ensure_compatible()?;
     let status = unsafe { sys::transcribe_init_backends_default() };
     check(status, "init_backends_default")
 }
@@ -170,6 +172,11 @@ pub fn device_count() -> usize {
 /// [`init_backends_default`]. Finish backend registration before sharing
 /// devices across threads.
 pub fn devices() -> Vec<Device> {
+    // Enumeration constructs a native output struct. Never initialize that
+    // struct against an incompatible DLL, even if called before model loading.
+    if crate::version::ensure_compatible().is_err() {
+        return Vec::new();
+    }
     let mut out = Vec::with_capacity(device_count());
     for i in 0..device_count() as i32 {
         let handle = unsafe { sys::transcribe_device_get(i) };

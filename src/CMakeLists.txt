@@ -154,6 +154,7 @@ target_compile_definitions(transcribe
         # transcribe_version_commit(). Falls back to "unknown" in the source
         # (see transcribe.cpp) when the build tree has no git metadata.
         TRANSCRIBE_COMMIT="${TRANSCRIBE_BUILD_COMMIT}"
+        TRANSCRIBE_HEADER_HASH="${TRANSCRIBE_HEADER_HASH}"
 )
 
 if(TRANSCRIBE_GGML_BACKEND_DL)
