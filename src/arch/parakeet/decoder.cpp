@@ -1200,6 +1200,181 @@ transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
     return TRANSCRIBE_OK;
 }
 
+transcribe_status decode_tdt_fluid_window(const HostDecoderWeights & w,
+                                          const float *              enc_out,
+                                          int                        T_enc,
+                                          int                        d_enc,
+                                          int                        n_threads,
+                                          bool                       finalize_tail,
+                                          std::vector<TdtToken> &    out_tokens) {
+    if (enc_out == nullptr || T_enc <= 0 || d_enc <= 0 || d_enc != w.joint.d_enc || w.tdt_durations.empty()) {
+        return TRANSCRIBE_ERR_INVALID_ARG;
+    }
+
+    constexpr int k_max_symbols_per_step    = 10;
+    constexpr int k_max_tokens_per_window   = 150;
+    constexpr int k_consecutive_blank_limit = 5;
+
+    const int nt          = resolve_decode_threads(n_threads);
+    const int n_layers    = static_cast<int>(w.predictor.lstm.size());
+    const int H           = w.predictor.pred_hidden;
+    const int n_token_cls = w.predictor.pred_vocab;
+    const int n_dur       = static_cast<int>(w.tdt_durations.size());
+    const int blank_id    = w.blank_id;
+
+    PredGraph  pg;
+    JointGraph jg;
+    build_pred_graph(pg, w.predictor, nt);
+    if (pg.ready) {
+        build_joint_graph(jg, w.joint, pg.backend);
+    }
+    if (!pg.ready || !jg.ready) {
+        log_msg(TRANSCRIBE_LOG_LEVEL_ERROR, "parakeet Fluid window decoder: graph build failed");
+        return TRANSCRIBE_ERR_BACKEND;
+    }
+
+    LstmState state;
+    LstmState next_state;
+    state.reset(n_layers, H);
+    next_state.reset(n_layers, H);
+
+    const int          joint_h = w.joint.joint_h;
+    std::vector<float> enc_proj_all;
+    if (!precompute_enc_proj_ggml(w.joint, pg.backend, enc_out, T_enc, d_enc, enc_proj_all)) {
+        log_msg(TRANSCRIBE_LOG_LEVEL_ERROR, "parakeet Fluid window decoder: encoder projection failed");
+        return TRANSCRIBE_ERR_BACKEND;
+    }
+
+    std::vector<float> scratch_x;
+    std::vector<float> scratch_probs;
+    std::vector<float> logits;
+    // FluidAudio primes a fresh utterance with the blank token as SOS. This is
+    // intentionally different from the ordinary native decoder's zero-vector
+    // sentinel and is scoped to the explicit Fluid window extension.
+    int                last_token         = blank_id;
+    int                step               = 0;
+    int                last_emission_step = -1;
+    int                emissions_at_step  = 0;
+    int                tokens_processed   = 0;
+    int                iter               = 0;
+    const int          max_iters          = 16 * T_enc + 1024;
+    bool               predictor_dirty    = true;
+
+    // Run one predictor projection for the current linguistic state. A blank
+    // never commits state, so its projection remains reusable across silence.
+    auto predictor = [&]() -> const float * {
+        if (predictor_dirty) {
+            const float * out = predictor_step_ggml(w.predictor, pg, last_token, state, next_state, scratch_x);
+            predictor_dirty   = false;
+            return out;
+        }
+        return next_state.h.back().data();
+    };
+
+    auto decide = [&](int frame, const float * decoder_out, int & token, int & duration) {
+        const float * enc_proj = enc_proj_all.data() + static_cast<size_t>(frame) * static_cast<size_t>(joint_h);
+        joint_step(w.joint, jg, enc_proj, decoder_out, logits);
+        token              = argmax_range(logits.data(), n_token_cls);
+        const int decision = argmax_range(logits.data() + n_token_cls, n_dur);
+        duration           = w.tdt_durations[static_cast<size_t>(decision)];
+    };
+
+    auto emit = [&](int token, int frame, int duration) {
+        TdtToken out;
+        out.id              = token;
+        out.p               = token_confidence(logits.data(), n_token_cls, scratch_probs);
+        out.step_at_emit    = frame;
+        out.duration_frames = duration;
+        out_tokens.push_back(out);
+        last_token = token;
+        std::swap(state, next_state);
+        predictor_dirty = true;
+    };
+
+    while (step < T_enc && iter < max_iters) {
+        ++iter;
+        const float * decoder_out = predictor();
+        int           token       = blank_id;
+        int           duration    = 0;
+        decide(step, decoder_out, token, duration);
+
+        int emission_step = step;
+        if (token != blank_id && duration == 0 && emission_step == last_emission_step && emissions_at_step >= 1) {
+            duration = 1;
+        }
+        if (token == blank_id && duration == 0) {
+            duration = 1;
+        }
+        step += duration;
+
+        // Fluid reuses the predictor projection while blanks advance over
+        // silence. Stop immediately when a nonblank decision is found.
+        while (step < T_enc && token == blank_id && iter < max_iters) {
+            ++iter;
+            emission_step = step;
+            decide(step, decoder_out, token, duration);
+            if (token == blank_id && duration == 0) {
+                duration = 1;
+            }
+            step += duration;
+        }
+
+        // The boundary check intentionally happens after duration advance.
+        // A nonblank that crosses the valid content end is not emitted.
+        if (step < T_enc && token != blank_id) {
+            ++tokens_processed;
+            if (tokens_processed > k_max_tokens_per_window) {
+                break;
+            }
+            emit(token, emission_step, duration);
+            if (emission_step == last_emission_step) {
+                ++emissions_at_step;
+            } else {
+                last_emission_step = emission_step;
+                emissions_at_step  = 1;
+            }
+            if (emissions_at_step >= k_max_symbols_per_step) {
+                step               = std::min(step + 1, T_enc - 1);
+                emissions_at_step  = 0;
+                last_emission_step = -1;
+            }
+        }
+    }
+
+    if (iter >= max_iters) {
+        log_msg(TRANSCRIBE_LOG_LEVEL_ERROR, "parakeet Fluid window decoder: hit iteration cap (%d)", max_iters);
+        return TRANSCRIBE_ERR_BACKEND;
+    }
+
+    if (finalize_tail) {
+        int final_step         = step;
+        int additional_steps   = 0;
+        int consecutive_blanks = 0;
+        while (additional_steps < k_max_symbols_per_step && consecutive_blanks < k_consecutive_blank_limit) {
+            const float * decoder_out         = predictor();
+            const int     frame_variations[3] = {
+                std::min(final_step, T_enc - 1),
+                T_enc - 1,
+                std::max(0, T_enc - 2),
+            };
+            const int frame    = frame_variations[additional_steps % 3];
+            int       token    = blank_id;
+            int       duration = 0;
+            decide(frame, decoder_out, token, duration);
+            if (token == blank_id) {
+                ++consecutive_blanks;
+            } else {
+                consecutive_blanks = 0;
+                emit(token, std::min(final_step, T_enc - 1), duration);
+            }
+            final_step = std::min(final_step + std::max(1, duration), T_enc);
+            ++additional_steps;
+        }
+    }
+
+    return TRANSCRIBE_OK;
+}
+
 // ---------------------------------------------------------------------------
 // RNNT greedy decode
 // ---------------------------------------------------------------------------

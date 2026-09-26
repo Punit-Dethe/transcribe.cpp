@@ -223,6 +223,18 @@ transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
                                     int                        n_threads,
                                     std::vector<TdtToken> &    out_tokens);
 
+// Stateless TDT policy used by the Parakeet window run extension. The encoder
+// buffer is already sliced to the caller's decode interval. This preserves
+// FluidAudio's post-duration boundary check, duration-zero handling, token
+// budget, and optional final-tail drain without changing ordinary run().
+transcribe_status decode_tdt_fluid_window(const HostDecoderWeights & w,
+                                          const float *              enc_out,
+                                          int                        T_enc,
+                                          int                        d_enc,
+                                          int                        n_threads,
+                                          bool                       finalize_tail,
+                                          std::vector<TdtToken> &    out_tokens);
+
 // Run RNNT greedy decode end-to-end. Same predictor + joint code as TDT,
 // but the joint emits `vocab+1` logits (no duration extras) and the step
 // rule is "blank → advance one frame, non-blank → emit + stay, capped by

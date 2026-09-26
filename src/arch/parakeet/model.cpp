@@ -755,8 +755,35 @@ static transcribe_status decode_and_populate(ParakeetSession *             pc,
         transcribe_status st = TRANSCRIBE_OK;
         switch (pm->host_decoder.head_kind) {
             case HostHeadKind::TDT:
-                st = decode_tdt_greedy(pm->host_decoder, enc, T_enc, d_enc, pc->n_threads, pc->raw_tokens);
-                break;
+                {
+                    if (params != nullptr && params->family != nullptr &&
+                        params->family->kind == TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW) {
+                        const auto * ext = reinterpret_cast<const transcribe_parakeet_tdt_window_ext *>(params->family);
+                        if (ext->decode_start_frame < 0 || ext->decode_end_frame <= ext->decode_start_frame ||
+                            ext->decode_end_frame > T_enc || ext->timestamp_offset_frames < 0) {
+                            return TRANSCRIBE_ERR_INVALID_ARG;
+                        }
+                        const int start = ext->decode_start_frame;
+                        const int count = ext->decode_end_frame - start;
+                        st = decode_tdt_fluid_window(pm->host_decoder,
+                                                     enc + static_cast<size_t>(start) * static_cast<size_t>(d_enc),
+                                                     count, d_enc, pc->n_threads, ext->finalize_tail, pc->raw_tokens);
+                        if (st == TRANSCRIBE_OK) {
+                            const int64_t frame_offset =
+                                static_cast<int64_t>(start) + static_cast<int64_t>(ext->timestamp_offset_frames);
+                            for (auto & token : pc->raw_tokens) {
+                                const int64_t absolute = static_cast<int64_t>(token.step_at_emit) + frame_offset;
+                                if (absolute > std::numeric_limits<int>::max()) {
+                                    return TRANSCRIBE_ERR_INVALID_ARG;
+                                }
+                                token.step_at_emit = static_cast<int>(absolute);
+                            }
+                        }
+                    } else {
+                        st = decode_tdt_greedy(pm->host_decoder, enc, T_enc, d_enc, pc->n_threads, pc->raw_tokens);
+                    }
+                    break;
+                }
             case HostHeadKind::RNNT:
                 st = decode_rnnt_greedy(pm->host_decoder, enc, T_enc, d_enc, pc->n_threads, pc->raw_tokens);
                 break;
@@ -3323,10 +3350,20 @@ bool accepts_ext_kind(const transcribe_model * model, transcribe_ext_slot slot, 
     if (model == nullptr) {
         return false;
     }
+    const auto * pm = static_cast<const ParakeetModel *>(model);
+    if (slot == TRANSCRIBE_EXT_SLOT_RUN) {
+        const auto & durations             = pm->host_decoder.tdt_durations;
+        const bool   exact_fluid_durations = durations.size() == 5 && durations[0] == 0 && durations[1] == 1 &&
+                                             durations[2] == 2 && durations[3] == 3 && durations[4] == 4;
+        const bool   exact_fluid_blank     = (pm->variant == "tdt-0.6b-v2" && pm->host_decoder.blank_id == 1024) ||
+                                             (pm->variant == "tdt-0.6b-v3" && pm->host_decoder.blank_id == 8192);
+        const bool   reviewed_tdt =
+            pm->host_decoder.head_kind == HostHeadKind::TDT && exact_fluid_blank && exact_fluid_durations;
+        return reviewed_tdt && kind == TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW;
+    }
     if (slot != TRANSCRIBE_EXT_SLOT_STREAM) {
         return false;
     }
-    const auto * pm = static_cast<const ParakeetModel *>(model);
     switch (pm->hparams.enc_att_context_style) {
         case ParakeetHParams::AttContextStyle::ChunkedLimited:
             return kind == TRANSCRIBE_EXT_KIND_PARAKEET_STREAM;
@@ -3336,6 +3373,27 @@ bool accepts_ext_kind(const transcribe_model * model, transcribe_ext_slot slot, 
             return false;
     }
     return false;
+}
+
+transcribe_status run_validate(const transcribe_session * session, const transcribe_run_params * params) {
+    if (params == nullptr || params->family == nullptr) {
+        return TRANSCRIBE_OK;
+    }
+    if (const transcribe_status st = transcribe_ext_check(params->family, TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW,
+                                                          sizeof(struct transcribe_parakeet_tdt_window_ext));
+        st != TRANSCRIBE_OK) {
+        return st;
+    }
+    if (session == nullptr || session->model == nullptr ||
+        !accepts_ext_kind(session->model, TRANSCRIBE_EXT_SLOT_RUN, params->family->kind)) {
+        return TRANSCRIBE_ERR_INVALID_ARG;
+    }
+    const auto * ext = reinterpret_cast<const transcribe_parakeet_tdt_window_ext *>(params->family);
+    if (ext->decode_start_frame < 0 || ext->decode_end_frame <= ext->decode_start_frame ||
+        ext->timestamp_offset_frames < 0 || params->diarize == TRANSCRIBE_DIARIZE_MODE_ON) {
+        return TRANSCRIBE_ERR_INVALID_ARG;
+    }
+    return TRANSCRIBE_OK;
 }
 
 }  // namespace
@@ -3354,6 +3412,7 @@ extern const Arch arch = {
     /* .stream_finalize  = */ stream_finalize,
     /* .stream_reset     = */ stream_reset,
     /* .accepts_ext_kind = */ accepts_ext_kind,
+    /* .run_validate     = */ run_validate,
 };
 
 }  // namespace transcribe::parakeet
@@ -3384,4 +3443,13 @@ extern "C" void transcribe_parakeet_buffered_stream_ext_init(struct transcribe_p
     p->left_ms  = -1;  // model default
     p->chunk_ms = -1;
     p->right_ms = -1;
+}
+
+extern "C" void transcribe_parakeet_tdt_window_ext_init(struct transcribe_parakeet_tdt_window_ext * p) {
+    if (p == nullptr) {
+        return;
+    }
+    std::memset(p, 0, sizeof(*p));
+    p->ext.size = sizeof(*p);
+    p->ext.kind = TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW;
 }

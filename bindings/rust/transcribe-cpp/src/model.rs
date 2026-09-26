@@ -265,6 +265,37 @@ impl Model {
             return Ok(buf);
         }
     }
+
+    /// Decode a complete model-token sequence. Byte-fallback ids must stay
+    /// together because one Unicode scalar may span several token ids.
+    pub fn detokenize(&self, tokens: &[i32]) -> Result<String> {
+        let n_tokens = i32::try_from(tokens.len()).map_err(|_| {
+            crate::Error::InvalidArgument("token sequence exceeds native i32 length".to_string())
+        })?;
+        let mut bytes = vec![0_u8; tokens.len().saturating_mul(4).max(16)];
+        loop {
+            let n = unsafe {
+                sys::transcribe_detokenize(
+                    self.inner.ptr,
+                    tokens.as_ptr(),
+                    n_tokens,
+                    bytes.as_mut_ptr().cast(),
+                    bytes.len(),
+                )
+            };
+            if n == i32::MIN {
+                return Err(crate::Error::InvalidArgument(
+                    "model token sequence could not be decoded".to_string(),
+                ));
+            }
+            if n < 0 {
+                bytes.resize((-n) as usize, 0);
+                continue;
+            }
+            bytes.truncate(n as usize);
+            return Ok(String::from_utf8(bytes)?);
+        }
+    }
 }
 
 fn check_model_load(status: sys::transcribe_status, context: &str) -> Result<()> {

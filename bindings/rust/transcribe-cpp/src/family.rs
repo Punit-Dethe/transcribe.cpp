@@ -53,6 +53,21 @@ pub struct ParakeetBufferedStreamOptions {
     pub right_ms: Option<i32>,
 }
 
+/// Stateless Parakeet TDT v2/v3 window controls (run slot). Frame values are
+/// at the model encoder rate (80 ms for the reviewed v2/v3 artifacts).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParakeetTdtWindowOptions {
+    pub decode_start_frame: i32,
+    pub decode_end_frame: i32,
+    pub timestamp_offset_frames: i32,
+    pub finalize_tail: bool,
+}
+
+impl ParakeetTdtWindowOptions {
+    /// Native run-extension kind used for capability probing.
+    pub const KIND: u32 = sys::TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW;
+}
+
 /// Voxtral-realtime streaming knobs (stream slot).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct VoxtralRealtimeStreamOptions {
@@ -109,6 +124,7 @@ pub struct SortformerStreamOptions {
 pub enum RunExtension {
     Whisper(WhisperRunOptions),
     Sortformer(SortformerStreamOptions),
+    ParakeetTdtWindow(ParakeetTdtWindowOptions),
 }
 
 /// A family extension for the stream slot.
@@ -131,6 +147,7 @@ pub(crate) enum RunExtRaw {
         _prompt: Option<CString>,
     },
     Sortformer(Box<sys::transcribe_sortformer_stream_ext>),
+    ParakeetTdtWindow(Box<sys::transcribe_parakeet_tdt_window_ext>),
 }
 
 impl RunExtRaw {
@@ -142,6 +159,10 @@ impl RunExtRaw {
             }
             RunExtRaw::Sortformer(e) => {
                 (&**e) as *const sys::transcribe_sortformer_stream_ext as *const sys::transcribe_ext
+            }
+            RunExtRaw::ParakeetTdtWindow(e) => {
+                (&**e) as *const sys::transcribe_parakeet_tdt_window_ext
+                    as *const sys::transcribe_ext
             }
         }
     }
@@ -181,6 +202,16 @@ impl RunExtension {
                 unsafe { sys::transcribe_sortformer_stream_ext_init(&mut ext) };
                 set(&mut ext.preset, o.preset.map(SortformerPreset::to_sys));
                 Ok(RunExtRaw::Sortformer(Box::new(ext)))
+            }
+            RunExtension::ParakeetTdtWindow(o) => {
+                let mut ext: sys::transcribe_parakeet_tdt_window_ext =
+                    unsafe { std::mem::zeroed() };
+                unsafe { sys::transcribe_parakeet_tdt_window_ext_init(&mut ext) };
+                ext.decode_start_frame = o.decode_start_frame;
+                ext.decode_end_frame = o.decode_end_frame;
+                ext.timestamp_offset_frames = o.timestamp_offset_frames;
+                ext.finalize_tail = o.finalize_tail;
+                Ok(RunExtRaw::ParakeetTdtWindow(Box::new(ext)))
             }
         }
     }
@@ -257,5 +288,35 @@ impl StreamExtension {
 fn set<T>(slot: &mut T, value: Option<T>) {
     if let Some(v) = value {
         *slot = v;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ParakeetTdtWindowOptions, RunExtRaw, RunExtension};
+    use transcribe_cpp_sys as sys;
+
+    #[test]
+    fn parakeet_tdt_window_materializes_exact_native_contract() {
+        let options = ParakeetTdtWindowOptions {
+            decode_start_frame: 1,
+            decode_end_frame: 186,
+            timestamp_offset_frames: 161,
+            finalize_tail: true,
+        };
+
+        let raw = RunExtension::ParakeetTdtWindow(options)
+            .materialize()
+            .expect("materialize Parakeet TDT window");
+        let RunExtRaw::ParakeetTdtWindow(ext) = raw else {
+            panic!("wrong native extension variant");
+        };
+
+        assert_eq!(ext.ext.size as usize, std::mem::size_of_val(&*ext));
+        assert_eq!(ext.ext.kind, sys::TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW);
+        assert_eq!(ext.decode_start_frame, 1);
+        assert_eq!(ext.decode_end_frame, 186);
+        assert_eq!(ext.timestamp_offset_frames, 161);
+        assert!(ext.finalize_tail);
     }
 }

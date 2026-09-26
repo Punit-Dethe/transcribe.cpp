@@ -15,7 +15,7 @@ version = "0.2.3"
 edition = "2021"
 rust-version = "1.74"
 description = "Native FFI bindings for transcribe.cpp, a C/C++ speech-to-text library built on ggml"
-license = "MIT"
+license = "MIT AND Apache-2.0"
 readme = "bindings/rust/sys/README.md"
 repository = "https://github.com/handy-computer/transcribe.cpp"
 homepage = "https://github.com/handy-computer/transcribe.cpp"
@@ -36,6 +36,8 @@ include = [
     "/CMakeLists.txt",
     "/CMakePresets.json",
     "/LICENSE",
+    "/GRAIN-FLUIDAUDIO-LICENSE",
+    "/GRAIN-FLUIDAUDIO-NOTICE",
     "/include/**/*.h",
     "/include/transcribe.abihash",
     "/src/**",

@@ -73,6 +73,9 @@ pub enum Error {
     /// A caller-supplied string contained an interior NUL byte.
     #[error("string contains an interior NUL byte: {0}")]
     Nul(#[from] std::ffi::NulError),
+    /// Native tokenizer output was not valid UTF-8.
+    #[error("detokenized bytes are not valid UTF-8: {0}")]
+    Utf8(#[from] std::string::FromUtf8Error),
     /// Another session of the same model already has a compute operation in
     /// flight. The C library serializes compute per model (the 0.x limitation):
     /// at most one run / batch / active stream across ALL of a model's sessions
@@ -105,7 +108,7 @@ impl Error {
             Error::OutputTruncated { .. } => S::TRANSCRIBE_ERR_OUTPUT_TRUNCATED,
             _ => S::TRANSCRIBE_OK,
         };
-        s.0 as i32
+        s.0
     }
 
     /// The partial transcript carried by [`Error::Aborted`] /
@@ -136,7 +139,7 @@ pub(crate) fn status_string(status: i32) -> String {
 /// The run path re-attaches partials for the two result-bearing statuses.
 pub(crate) fn error_for_status(status: sys::transcribe_status, context: &str) -> Error {
     use sys::transcribe_status as S;
-    let code = status.0 as i32;
+    let code = status.0;
     let msg = {
         let s = status_string(code);
         if context.is_empty() {

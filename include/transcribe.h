@@ -2264,6 +2264,25 @@ TRANSCRIBE_API int transcribe_tokenize(const struct transcribe_model * model,
                                        int32_t *                       tokens,
                                        size_t                          n_max);
 
+/*
+ * Decode a complete token-id sequence into model-native UTF-8 bytes. This is
+ * sequence-level by design: byte-fallback vocabularies can require several
+ * token ids to produce one Unicode scalar.
+ *
+ *   >= 0             Number of bytes written to text[0..return-1]. No NUL is
+ *                    appended; callers use the returned length.
+ *   negative of N    Buffer too small; N bytes are required.
+ *   INT_MIN          Invalid arguments or no tokenizer on this model.
+ *
+ * Passing text=NULL and n_max=0 is the normal size-probe call. tokens may be
+ * NULL only when n_tokens is zero.
+ */
+TRANSCRIBE_API int transcribe_detokenize(const struct transcribe_model * model,
+                                         const int32_t *                 tokens,
+                                         int                             n_tokens,
+                                         char *                          text,
+                                         size_t                          n_max);
+
 /* ----------------------------------------------------------------------- */
 /* Timings                                                                 */
 /* ----------------------------------------------------------------------- */

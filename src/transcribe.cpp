@@ -2587,6 +2587,40 @@ static int transcribe_tokenize_impl(const struct transcribe_model * model,
     return static_cast<int>(n);
 }
 
+static int transcribe_detokenize_impl(const struct transcribe_model * model,
+                                      const int32_t *                 tokens,
+                                      int                             n_tokens,
+                                      char *                          text,
+                                      size_t                          n_max) {
+    if (model == nullptr || n_tokens < 0 || (tokens == nullptr && n_tokens > 0)) {
+        return INT_MIN;
+    }
+    const transcribe::Tokenizer * tok = model->tokenizer();
+    if (tok == nullptr) {
+        return INT_MIN;
+    }
+    std::vector<int> ids;
+    ids.reserve(static_cast<size_t>(n_tokens));
+    for (int i = 0; i < n_tokens; ++i) {
+        ids.push_back(tokens[i]);
+    }
+    const std::string decoded = tok->decode(ids.data(), n_tokens);
+    const size_t      n       = decoded.size();
+    if (n > static_cast<size_t>(INT_MAX)) {
+        return INT_MIN;
+    }
+    if (n > n_max) {
+        return -static_cast<int>(n);
+    }
+    if (text == nullptr && n > 0) {
+        return INT_MIN;
+    }
+    if (n > 0) {
+        std::memcpy(text, decoded.data(), n);
+    }
+    return static_cast<int>(n);
+}
+
 extern "C" const char * transcribe_model_backend(const struct transcribe_model * model) {
     // Empty string means "no runtime backend bound" — see the public header
     // for the full semantic.
@@ -3291,4 +3325,13 @@ extern "C" int transcribe_tokenize(const struct transcribe_model * model,
                                    size_t                          n_max) {
     return api_guard_value("transcribe_tokenize", INT_MIN,
                            [&] { return transcribe_tokenize_impl(model, text, tokens, n_max); });
+}
+
+extern "C" int transcribe_detokenize(const struct transcribe_model * model,
+                                     const int32_t *                 tokens,
+                                     int                             n_tokens,
+                                     char *                          text,
+                                     size_t                          n_max) {
+    return api_guard_value("transcribe_detokenize", INT_MIN,
+                           [&] { return transcribe_detokenize_impl(model, tokens, n_tokens, text, n_max); });
 }
