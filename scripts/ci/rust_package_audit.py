@@ -23,6 +23,7 @@ Stdlib only. Exit 0 on a clean audit, 1 on any violation.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -40,6 +41,9 @@ REQUIRED_PREFIXES = [
     "bindings/rust/sys/build.rs",
     "bindings/rust/sys/src/lib.rs",
     "bindings/rust/sys/src/transcribe_sys.rs",
+    "include/transcribe.abihash",
+    "GRAIN-FLUIDAUDIO-LICENSE",
+    "GRAIN-FLUIDAUDIO-NOTICE",
 ]
 
 # Trees that must NEVER reach the registry. `tests/`, `dumps/`, and `reports/`
@@ -73,8 +77,9 @@ def package_file_list() -> list[str]:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
-    return [line.strip() for line in out.stdout.splitlines() if line.strip()]
+    return [line.strip().replace("\\", "/") for line in out.stdout.splitlines() if line.strip()]
 
 
 def build_crate() -> Path:
@@ -83,10 +88,14 @@ def build_crate() -> Path:
         cwd=REPO,
         check=True,
     )
-    crates = sorted((REPO / "target" / "package").glob(f"{CRATE}-*.crate"))
-    if not crates:
+    metadata = json.loads(subprocess.check_output(
+        ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+        cwd=REPO, text=True, encoding="utf-8"))
+    version = next(p["version"] for p in metadata["packages"] if p["name"] == CRATE)
+    crate = Path(metadata["target_directory"]) / "package" / f"{CRATE}-{version}.crate"
+    if not crate.is_file():
         sys.exit("audit FAILED: no .crate produced")
-    return crates[-1]
+    return crate
 
 
 def main() -> int:

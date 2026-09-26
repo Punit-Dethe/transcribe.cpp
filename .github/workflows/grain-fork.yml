@@ -39,6 +39,7 @@ jobs:
           uv run --no-project --with libclang==18.1.1 bindings/python/_generate/generate.py --check
           uv run --no-project --with libclang==18.1.1 python -c "import clang.cindex, os, subprocess; os.environ['LIBCLANG_PATH']=clang.cindex.Config.library_path; subprocess.check_call(['cargo','run','--locked','-p','xtask','--','bindgen','--check'])"
           uv run --no-project scripts/ci/swift_abihash_check.py
+          uv run --no-project scripts/ci/rust_package_audit.py
           scripts/ci/clang-format.sh --check-diff 63a44d9239d610b3908e8a66b384924cd4a77217
       - name: Safe Rust source build and tests
         shell: bash
