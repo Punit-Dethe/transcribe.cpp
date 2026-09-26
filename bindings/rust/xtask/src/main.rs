@@ -115,5 +115,5 @@ fn generate(root: &Path) -> String {
          pub const PUBLIC_HEADER_HASH: &str = \"{abihash}\";\n\
          \n"
     );
-    format!("{banner}{bindings}")
+    format!("{banner}{bindings}").replace("\r\n", "\n")
 }
