@@ -503,13 +503,13 @@ def main() -> int:
 
     if args.check:
         stale = []
-        current = OUTPUT.read_text() if OUTPUT.exists() else ""
+        current = OUTPUT.read_text(encoding="utf-8") if OUTPUT.exists() else ""
         if current != text:
             stale.append(str(OUTPUT))
-        current_hash = ABIHASH.read_text() if ABIHASH.exists() else ""
+        current_hash = ABIHASH.read_text(encoding="utf-8") if ABIHASH.exists() else ""
         if current_hash != hash_text:
             stale.append(str(ABIHASH))
-        current_ts = OUTPUT_TS.read_text() if OUTPUT_TS.exists() else ""
+        current_ts = OUTPUT_TS.read_text(encoding="utf-8") if OUTPUT_TS.exists() else ""
         if current_ts != ts_text:
             stale.append(str(OUTPUT_TS))
         if stale:
@@ -520,10 +520,10 @@ def main() -> int:
         print(f"{OUTPUT.name}, {ABIHASH.name} and {OUTPUT_TS.name} are up to date")
         return 0
 
-    OUTPUT.write_text(text)
-    ABIHASH.write_text(hash_text)
+    OUTPUT.write_text(text, encoding="utf-8", newline="\n")
+    ABIHASH.write_text(hash_text, encoding="utf-8", newline="\n")
     OUTPUT_TS.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_TS.write_text(ts_text)
+    OUTPUT_TS.write_text(ts_text, encoding="utf-8", newline="\n")
     print(f"wrote {OUTPUT}")
     print(f"wrote {ABIHASH} ({digest})")
     print(f"wrote {OUTPUT_TS}")

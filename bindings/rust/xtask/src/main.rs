@@ -45,7 +45,10 @@ fn run_bindgen(check: bool) -> ExitCode {
     let target = root.join(GENERATED);
 
     if check {
-        let committed = std::fs::read_to_string(&target).unwrap_or_default();
+        // Git autocrlf changes checkout bytes on Windows, not the ABI.
+        let committed = std::fs::read_to_string(&target)
+            .unwrap_or_default()
+            .replace("\r\n", "\n");
         if committed == generated {
             println!("xtask: {GENERATED} is up to date");
             ExitCode::SUCCESS
