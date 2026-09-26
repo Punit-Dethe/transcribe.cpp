@@ -43,6 +43,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -1207,6 +1208,12 @@ transcribe_status decode_tdt_fluid_window(const HostDecoderWeights & w,
                                           int                        n_threads,
                                           bool                       finalize_tail,
                                           std::vector<TdtToken> &    out_tokens) {
+    // Upstream 0.2.4 makes this helper fallible. Ignoring its new bool return
+    // would compile and lose backend errors: require an explicit error-path
+    // port when updating this private dependency. No runtime cost.
+    static_assert(std::is_same<decltype(&joint_step), void (*)(const HostJoint &, const JointGraph &, const float *,
+                                                               const float *, std::vector<float> &)>::value,
+                  "Port Fluid decoder error propagation when the upstream joint helper changes");
     if (enc_out == nullptr || T_enc <= 0 || d_enc <= 0 || d_enc != w.joint.d_enc || w.tdt_durations.empty()) {
         return TRANSCRIBE_ERR_INVALID_ARG;
     }
