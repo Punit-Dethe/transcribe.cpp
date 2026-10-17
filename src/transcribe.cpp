@@ -52,6 +52,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <climits>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
