@@ -13,7 +13,7 @@ import ctypes as _c
 # Stable digest of the ABI surface below (structs, enums, macros, layout,
 # prototypes). A native provider package echoes this back so the API
 # package can reject an ABI-mismatched provider before dlopen.
-PUBLIC_HEADER_HASH = "98540564cd329b85"
+PUBLIC_HEADER_HASH = "3669c8465a11b2f5"
 
 # === enum constants ===
 TRANSCRIBE_OK = 0
@@ -67,6 +67,7 @@ TRANSCRIBE_ABI_VAD_SESSION_PARAMS = 25
 TRANSCRIBE_ABI_VAD_PARAMS = 26
 TRANSCRIBE_ABI_VAD_RESULT = 27
 TRANSCRIBE_ABI_VAD_SEGMENT = 28
+TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT = 29
 TRANSCRIBE_LOG_LEVEL_NONE = 0
 TRANSCRIBE_LOG_LEVEL_INFO = 1
 TRANSCRIBE_LOG_LEVEL_WARN = 2
@@ -147,9 +148,11 @@ TRANSCRIBE_BACKEND_MASK_VULKAN = 4
 TRANSCRIBE_EXT_KIND_MOONSHINE_STREAMING_STREAM = 1414746957
 TRANSCRIBE_EXT_KIND_PARAKEET_BUFFERED_STREAM = 1396853584
 TRANSCRIBE_EXT_KIND_PARAKEET_STREAM = 1414744912
+TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW = 1464224592
 TRANSCRIBE_EXT_KIND_SORTFORMER_DIARIZE = 1380206163
 TRANSCRIBE_EXT_KIND_VOXTRAL_REALTIME_STREAM = 1414746710
 TRANSCRIBE_EXT_KIND_WHISPER_RUN = 1314015319
+TRANSCRIBE_GRAIN_CONTRACT_REVISION = 3
 
 # === structs ===
 class transcribe_ext(_c.Structure):
@@ -202,6 +205,8 @@ class transcribe_langid_candidate(_c.Structure):
     pass
 class transcribe_moonshine_streaming_stream_ext(_c.Structure):
     pass
+class transcribe_parakeet_tdt_window_ext(_c.Structure):
+    pass
 class transcribe_parakeet_stream_ext(_c.Structure):
     pass
 class transcribe_parakeet_buffered_stream_ext(_c.Structure):
@@ -250,6 +255,7 @@ transcribe_langid_params._fields_ = [("struct_size", _c.c_uint64), ("allowed", _
 transcribe_langid_result._fields_ = [("struct_size", _c.c_uint64), ("n_candidates", _c.c_int32), ("allowed_mass", _c.c_float)]
 transcribe_langid_candidate._fields_ = [("struct_size", _c.c_uint64), ("index", _c.c_int32), ("code", _c.c_char_p), ("name", _c.c_char_p), ("p", _c.c_float), ("logit", _c.c_float)]
 transcribe_moonshine_streaming_stream_ext._fields_ = [("ext", transcribe_ext), ("min_decode_interval_ms", _c.c_int32)]
+transcribe_parakeet_tdt_window_ext._fields_ = [("ext", transcribe_ext), ("decode_start_frame", _c.c_int32), ("decode_end_frame", _c.c_int32), ("timestamp_offset_frames", _c.c_int32), ("finalize_tail", _c.c_bool)]
 transcribe_parakeet_stream_ext._fields_ = [("ext", transcribe_ext), ("att_context_right", _c.c_int32)]
 transcribe_parakeet_buffered_stream_ext._fields_ = [("ext", transcribe_ext), ("left_ms", _c.c_int32), ("chunk_ms", _c.c_int32), ("right_ms", _c.c_int32)]
 transcribe_sortformer_diarize_ext._fields_ = [("ext", transcribe_ext), ("preset", _c.c_int)]
@@ -289,6 +295,7 @@ ABI_STRUCT_IDS = {
     'transcribe_langid_params': 21,
     'transcribe_langid_result': 22,
     'transcribe_langid_candidate': 23,
+    'transcribe_parakeet_tdt_window_ext': 29,
     'transcribe_vad_info': 24,
     'transcribe_vad_session_params': 25,
     'transcribe_vad_params': 26,
@@ -323,6 +330,7 @@ STRUCT_LAYOUT = {
     'transcribe_langid_result': {'size': 16, 'align': 8, 'offsets': {'struct_size': 0, 'n_candidates': 8, 'allowed_mass': 12}},
     'transcribe_langid_candidate': {'size': 40, 'align': 8, 'offsets': {'struct_size': 0, 'index': 8, 'code': 16, 'name': 24, 'p': 32, 'logit': 36}},
     'transcribe_moonshine_streaming_stream_ext': {'size': 24, 'align': 8, 'offsets': {'ext': 0, 'min_decode_interval_ms': 16}},
+    'transcribe_parakeet_tdt_window_ext': {'size': 32, 'align': 8, 'offsets': {'ext': 0, 'decode_start_frame': 16, 'decode_end_frame': 20, 'timestamp_offset_frames': 24, 'finalize_tail': 28}},
     'transcribe_parakeet_stream_ext': {'size': 24, 'align': 8, 'offsets': {'ext': 0, 'att_context_right': 16}},
     'transcribe_parakeet_buffered_stream_ext': {'size': 32, 'align': 8, 'offsets': {'ext': 0, 'left_ms': 16, 'chunk_ms': 20, 'right_ms': 24}},
     'transcribe_sortformer_diarize_ext': {'size': 24, 'align': 8, 'offsets': {'ext': 0, 'preset': 16}},
@@ -385,6 +393,8 @@ def configure(lib):
     lib.transcribe_close.argtypes = [_c.c_void_p]
     lib.transcribe_detected_language.restype = _c.c_char_p
     lib.transcribe_detected_language.argtypes = [_c.c_void_p]
+    lib.transcribe_detokenize.restype = _c.c_int
+    lib.transcribe_detokenize.argtypes = [_c.c_void_p, _c.POINTER(_c.c_int32), _c.c_int, _c.c_char_p, _c.c_size_t]
     lib.transcribe_device_count.restype = _c.c_int
     lib.transcribe_device_count.argtypes = []
     lib.transcribe_device_get.restype = _c.c_void_p
@@ -435,6 +445,10 @@ def configure(lib):
     lib.transcribe_get_whisper_chunk_trace.argtypes = [_c.c_void_p, _c.c_int, _c.POINTER(transcribe_whisper_chunk_trace)]
     lib.transcribe_get_word.restype = _c.c_int
     lib.transcribe_get_word.argtypes = [_c.c_void_p, _c.c_int, _c.POINTER(transcribe_word)]
+    lib.transcribe_grain_contract_revision.restype = _c.c_uint32
+    lib.transcribe_grain_contract_revision.argtypes = []
+    lib.transcribe_grain_patch_id.restype = _c.c_char_p
+    lib.transcribe_grain_patch_id.argtypes = []
     lib.transcribe_init_backends.restype = _c.c_int
     lib.transcribe_init_backends.argtypes = [_c.c_char_p]
     lib.transcribe_init_backends_default.restype = _c.c_int
@@ -515,6 +529,8 @@ def configure(lib):
     lib.transcribe_parakeet_buffered_stream_ext_init.argtypes = [_c.POINTER(transcribe_parakeet_buffered_stream_ext)]
     lib.transcribe_parakeet_stream_ext_init.restype = None
     lib.transcribe_parakeet_stream_ext_init.argtypes = [_c.POINTER(transcribe_parakeet_stream_ext)]
+    lib.transcribe_parakeet_tdt_window_ext_init.restype = None
+    lib.transcribe_parakeet_tdt_window_ext_init.argtypes = [_c.POINTER(transcribe_parakeet_tdt_window_ext)]
     lib.transcribe_print_timings.restype = None
     lib.transcribe_print_timings.argtypes = [_c.c_void_p]
     lib.transcribe_raw_text.restype = _c.c_char_p
@@ -529,6 +545,8 @@ def configure(lib):
     lib.transcribe_run_batch.argtypes = [_c.c_void_p, _c.POINTER(_c.POINTER(_c.c_float)), _c.POINTER(_c.c_int), _c.c_int, _c.POINTER(transcribe_run_params)]
     lib.transcribe_run_params_init.restype = None
     lib.transcribe_run_params_init.argtypes = [_c.POINTER(transcribe_run_params)]
+    lib.transcribe_runtime_header_hash.restype = _c.c_char_p
+    lib.transcribe_runtime_header_hash.argtypes = []
     lib.transcribe_segment_init.restype = None
     lib.transcribe_segment_init.argtypes = [_c.POINTER(transcribe_segment)]
     lib.transcribe_session_free.restype = None

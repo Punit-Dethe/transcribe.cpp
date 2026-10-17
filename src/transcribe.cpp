@@ -29,9 +29,13 @@
 #include "transcribe-log.h"
 #include "transcribe-model.h"
 #include "transcribe-path.h"
+#include "transcribe-session.h"
+#include "transcribe-tokenizer.h"
 #include "transcribe/diarize.h"
 #include "transcribe/langid.h"
+#include "transcribe/parakeet.h"
 #include "transcribe/vad.h"
+#include "transcribe/whisper.h"
 
 #if defined(TRANSCRIBE_GGML_BACKEND_DL) && defined(_WIN32)
 #    ifndef WIN32_LEAN_AND_MEAN
@@ -139,6 +143,19 @@ extern "C" const char * transcribe_version_commit(void) {
     return TRANSCRIBE_COMMIT;
 }
 
+// Pure static queries: nothrow by construction, including archive builds.
+extern "C" uint32_t transcribe_grain_contract_revision(void) {
+    return TRANSCRIBE_GRAIN_CONTRACT_REVISION;
+}
+
+extern "C" const char * transcribe_grain_patch_id(void) {
+    return TRANSCRIBE_GRAIN_PATCH_ID;
+}
+
+extern "C" const char * transcribe_runtime_header_hash(void) {
+    return TRANSCRIBE_HEADER_HASH;
+}
+
 // ABI metadata: sizeof/alignof for the public structs, so a binding can
 // verify its layout against this build. Keep these switches in sync with the
 // transcribe_abi_struct enum.
@@ -203,6 +220,8 @@ extern "C" size_t transcribe_abi_struct_size(transcribe_abi_struct which) {
             return sizeof(struct transcribe_vad_result);
         case TRANSCRIBE_ABI_VAD_SEGMENT:
             return sizeof(struct transcribe_vad_segment);
+        case TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT:
+            return sizeof(struct transcribe_parakeet_tdt_window_ext);
     }
     return 0;  // unknown id: "cannot verify", never a real size
 }
@@ -267,6 +286,8 @@ extern "C" size_t transcribe_abi_struct_align(transcribe_abi_struct which) {
             return alignof(struct transcribe_vad_result);
         case TRANSCRIBE_ABI_VAD_SEGMENT:
             return alignof(struct transcribe_vad_segment);
+        case TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT:
+            return alignof(struct transcribe_parakeet_tdt_window_ext);
     }
     return 0;
 }
@@ -1169,6 +1190,40 @@ extern "C" uint32_t transcribe_model_roles(const struct transcribe_model * model
     return model != nullptr ? model->roles : 0;
 }
 
+static int transcribe_detokenize_impl(const struct transcribe_model * model,
+                                      const int32_t *                 tokens,
+                                      int                             n_tokens,
+                                      char *                          text,
+                                      size_t                          n_max) {
+    if (model == nullptr || n_tokens < 0 || (tokens == nullptr && n_tokens > 0)) {
+        return INT_MIN;
+    }
+    const transcribe::Tokenizer * tok = model->tokenizer();
+    if (tok == nullptr) {
+        return INT_MIN;
+    }
+    std::vector<int> ids;
+    ids.reserve(static_cast<size_t>(n_tokens));
+    for (int i = 0; i < n_tokens; ++i) {
+        ids.push_back(tokens[i]);
+    }
+    const std::string decoded = tok->decode(ids.data(), n_tokens);
+    const size_t      n       = decoded.size();
+    if (n > static_cast<size_t>(INT_MAX)) {
+        return INT_MIN;
+    }
+    if (n > n_max) {
+        return -static_cast<int>(n);
+    }
+    if (text == nullptr && n > 0) {
+        return INT_MIN;
+    }
+    if (n > 0) {
+        std::memcpy(text, decoded.data(), n);
+    }
+    return static_cast<int>(n);
+}
+
 extern "C" const char * transcribe_model_backend(const struct transcribe_model * model) {
     // Empty string means "no runtime backend bound" — see the public header
     // for the full semantic.
@@ -1256,4 +1311,13 @@ extern "C" void transcribe_model_free(struct transcribe_model * model) {
 extern "C" transcribe_device_t transcribe_model_device(const struct transcribe_model * model) {
     return api_guard_value("transcribe_model_device", static_cast<transcribe_device_t>(nullptr),
                            [&] { return transcribe_model_device_impl(model); });
+}
+
+extern "C" int transcribe_detokenize(const struct transcribe_model * model,
+                                     const int32_t *                 tokens,
+                                     int                             n_tokens,
+                                     char *                          text,
+                                     size_t                          n_max) {
+    return api_guard_value("transcribe_detokenize", INT_MIN,
+                           [&] { return transcribe_detokenize_impl(model, tokens, n_tokens, text, n_max); });
 }

@@ -216,14 +216,26 @@ struct TdtToken {
 // Outputs:
 //   out_tokens - appended with one TdtToken per non-blank emission
 //
-// Returns TRANSCRIBE_OK on success; cannot fail except via invalid args
-// (validated by the family driver before this is called).
+// Returns TRANSCRIBE_OK on success, or an invalid-argument/backend error.
+// Failed predictor/joint dispatches must never be consumed as valid output.
 transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
                                     const float *              enc_out,
                                     int                        T_enc,
                                     int                        d_enc,
                                     int                        n_threads,
                                     std::vector<TdtToken> &    out_tokens);
+
+// Stateless TDT policy used by the Parakeet window run extension. The encoder
+// buffer is already sliced to the caller's decode interval. This preserves
+// FluidAudio's post-duration boundary check, duration-zero handling, token
+// budget, and optional final-tail drain without changing ordinary run().
+transcribe_status decode_tdt_fluid_window(const HostDecoderWeights & w,
+                                          const float *              enc_out,
+                                          int                        T_enc,
+                                          int                        d_enc,
+                                          int                        n_threads,
+                                          bool                       finalize_tail,
+                                          std::vector<TdtToken> &    out_tokens);
 
 // Run RNNT greedy decode end-to-end. Same predictor + joint code as TDT,
 // but the joint emits `vocab+1` logits (no duration extras) and the step

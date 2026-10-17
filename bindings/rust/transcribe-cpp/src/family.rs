@@ -75,6 +75,22 @@ pub struct ParakeetBufferedStreamOptions {
     pub right_ms: Option<i32>,
 }
 
+/// Stateless Parakeet TDT v2/v3 window controls (run slot). Frame values are
+/// at the model encoder rate (80 ms for the reviewed v2/v3 artifacts).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ParakeetTdtWindowOptions {
+    pub decode_start_frame: i32,
+    pub decode_end_frame: i32,
+    pub timestamp_offset_frames: i32,
+    pub finalize_tail: bool,
+}
+
+impl ParakeetTdtWindowOptions {
+    /// Native run-extension kind used for capability probing.
+    pub const KIND: u32 = sys::TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW;
+}
+
 /// Voxtral-realtime streaming knobs (stream slot).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(
@@ -179,6 +195,7 @@ impl DiarizeExtension {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RunExtension {
     Whisper(WhisperRunOptions),
+    ParakeetTdtWindow(ParakeetTdtWindowOptions),
 }
 
 /// A family extension for the stream slot.
@@ -201,6 +218,7 @@ pub(crate) enum RunExtRaw {
         ext: Box<sys::transcribe_whisper_run_ext>,
         _prompt: Option<CString>,
     },
+    ParakeetTdtWindow(Box<sys::transcribe_parakeet_tdt_window_ext>),
 }
 
 impl RunExtRaw {
@@ -209,6 +227,10 @@ impl RunExtRaw {
             // `ext` is field 0, so &ext == &the family struct.
             RunExtRaw::Whisper { ext, .. } => {
                 (&**ext) as *const sys::transcribe_whisper_run_ext as *const sys::transcribe_ext
+            }
+            RunExtRaw::ParakeetTdtWindow(e) => {
+                (&**e) as *const sys::transcribe_parakeet_tdt_window_ext
+                    as *const sys::transcribe_ext
             }
         }
     }
@@ -242,6 +264,16 @@ impl RunExtension {
                     ext: Box::new(ext),
                     _prompt: prompt,
                 })
+            }
+            RunExtension::ParakeetTdtWindow(o) => {
+                let mut ext: sys::transcribe_parakeet_tdt_window_ext =
+                    unsafe { std::mem::zeroed() };
+                unsafe { sys::transcribe_parakeet_tdt_window_ext_init(&mut ext) };
+                ext.decode_start_frame = o.decode_start_frame;
+                ext.decode_end_frame = o.decode_end_frame;
+                ext.timestamp_offset_frames = o.timestamp_offset_frames;
+                ext.finalize_tail = o.finalize_tail;
+                Ok(RunExtRaw::ParakeetTdtWindow(Box::new(ext)))
             }
         }
     }
@@ -318,5 +350,57 @@ impl StreamExtension {
 fn set<T>(slot: &mut T, value: Option<T>) {
     if let Some(v) = value {
         *slot = v;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ParakeetTdtWindowOptions, RunExtRaw, RunExtension};
+    use transcribe_cpp_sys as sys;
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn window_run_options_survive_worker_serialization() {
+        let options = crate::RunOptions {
+            family: Some(RunExtension::ParakeetTdtWindow(ParakeetTdtWindowOptions {
+                decode_start_frame: 23,
+                decode_end_frame: 186,
+                timestamp_offset_frames: 161,
+                finalize_tail: true,
+            })),
+            ..Default::default()
+        };
+        let json = serde_json::to_vec(&options).expect("encode worker request");
+        let decoded: crate::RunOptions =
+            serde_json::from_slice(&json).expect("decode worker request");
+        assert_eq!(decoded, options);
+        let binary = postcard::to_allocvec(&options).expect("encode binary request");
+        let decoded: crate::RunOptions =
+            postcard::from_bytes(&binary).expect("decode binary request");
+        assert_eq!(decoded, options);
+    }
+
+    #[test]
+    fn parakeet_tdt_window_materializes_exact_native_contract() {
+        let options = ParakeetTdtWindowOptions {
+            decode_start_frame: 1,
+            decode_end_frame: 186,
+            timestamp_offset_frames: 161,
+            finalize_tail: true,
+        };
+
+        let raw = RunExtension::ParakeetTdtWindow(options)
+            .materialize()
+            .expect("materialize Parakeet TDT window");
+        let RunExtRaw::ParakeetTdtWindow(ext) = raw else {
+            panic!("wrong native extension variant");
+        };
+
+        assert_eq!(ext.ext.size as usize, std::mem::size_of_val(&*ext));
+        assert_eq!(ext.ext.kind, sys::TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW);
+        assert_eq!(ext.decode_start_frame, 1);
+        assert_eq!(ext.decode_end_frame, 186);
+        assert_eq!(ext.timestamp_offset_frames, 161);
+        assert!(ext.finalize_tail);
     }
 }

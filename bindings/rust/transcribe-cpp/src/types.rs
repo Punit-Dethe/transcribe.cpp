@@ -334,6 +334,7 @@ pub enum AbiStruct {
     VadParams,
     VadResult,
     VadSegment,
+    ParakeetTdtWindowExt,
 }
 
 impl AbiStruct {
@@ -369,6 +370,7 @@ impl AbiStruct {
             AbiStruct::VadParams => A::TRANSCRIBE_ABI_VAD_PARAMS,
             AbiStruct::VadResult => A::TRANSCRIBE_ABI_VAD_RESULT,
             AbiStruct::VadSegment => A::TRANSCRIBE_ABI_VAD_SEGMENT,
+            AbiStruct::ParakeetTdtWindowExt => A::TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT,
         }
     }
 }
@@ -426,7 +428,7 @@ impl Roles {
             Role::LangId => sys::transcribe_role::TRANSCRIBE_ROLE_LANGID,
             Role::Vad => sys::transcribe_role::TRANSCRIBE_ROLE_VAD,
         };
-        self.0 & bit.0 != 0
+        self.0 & bit.0 as u32 != 0
     }
 
     /// The raw `transcribe_role` bitmask (`TRANSCRIBE_ROLE_*` bits).

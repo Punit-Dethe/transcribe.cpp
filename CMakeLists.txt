@@ -46,6 +46,17 @@ if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
 endif()
 message(STATUS "transcribe version: ${PROJECT_VERSION} (commit ${TRANSCRIBE_BUILD_COMMIT})")
 
+# ABI identity comes from the same generated digest as the Rust bindings.
+# Read from source (not Git), and reconfigure whenever it changes.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/transcribe.abihash")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/include/transcribe.abihash" TRANSCRIBE_HEADER_HASH)
+string(STRIP "${TRANSCRIBE_HEADER_HASH}" TRANSCRIBE_HEADER_HASH)
+string(LENGTH "${TRANSCRIBE_HEADER_HASH}" _transcribe_hash_length)
+if(NOT _transcribe_hash_length EQUAL 16 OR NOT TRANSCRIBE_HEADER_HASH MATCHES "^[0-9a-f]+$")
+    message(FATAL_ERROR "Invalid include/transcribe.abihash; regenerate the public bindings")
+endif()
+
 # -----------------------------------------------------------------------------
 # Standards
 # -----------------------------------------------------------------------------

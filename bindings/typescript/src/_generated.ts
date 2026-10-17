@@ -11,7 +11,7 @@
 // Stable digest of the ABI surface (structs, enums, macros, layout,
 // prototypes), computed by the Python oracle and pinned here so a header
 // ABI change turns this binding's drift check red for conscious review.
-export const PUBLIC_HEADER_HASH = "98540564cd329b85";
+export const PUBLIC_HEADER_HASH = "3669c8465a11b2f5";
 
 // === enum constants ===
 export const TRANSCRIBE_OK = 0;
@@ -65,6 +65,7 @@ export const TRANSCRIBE_ABI_VAD_SESSION_PARAMS = 25;
 export const TRANSCRIBE_ABI_VAD_PARAMS = 26;
 export const TRANSCRIBE_ABI_VAD_RESULT = 27;
 export const TRANSCRIBE_ABI_VAD_SEGMENT = 28;
+export const TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT = 29;
 export const TRANSCRIBE_LOG_LEVEL_NONE = 0;
 export const TRANSCRIBE_LOG_LEVEL_INFO = 1;
 export const TRANSCRIBE_LOG_LEVEL_WARN = 2;
@@ -145,9 +146,11 @@ export const TRANSCRIBE_BACKEND_MASK_VULKAN = 4;
 export const TRANSCRIBE_EXT_KIND_MOONSHINE_STREAMING_STREAM = 1414746957;
 export const TRANSCRIBE_EXT_KIND_PARAKEET_BUFFERED_STREAM = 1396853584;
 export const TRANSCRIBE_EXT_KIND_PARAKEET_STREAM = 1414744912;
+export const TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW = 1464224592;
 export const TRANSCRIBE_EXT_KIND_SORTFORMER_DIARIZE = 1380206163;
 export const TRANSCRIBE_EXT_KIND_VOXTRAL_REALTIME_STREAM = 1414746710;
 export const TRANSCRIBE_EXT_KIND_WHISPER_RUN = 1314015319;
+export const TRANSCRIBE_GRAIN_CONTRACT_REVISION = 3;
 
 export interface StructLayout { size: number; align: number; offsets: Record<string, number>; }
 export const STRUCT_LAYOUT: Record<string, StructLayout> = {
@@ -176,6 +179,7 @@ export const STRUCT_LAYOUT: Record<string, StructLayout> = {
   'transcribe_langid_result': { size: 16, align: 8, offsets: {'struct_size': 0, 'n_candidates': 8, 'allowed_mass': 12} },
   'transcribe_langid_candidate': { size: 40, align: 8, offsets: {'struct_size': 0, 'index': 8, 'code': 16, 'name': 24, 'p': 32, 'logit': 36} },
   'transcribe_moonshine_streaming_stream_ext': { size: 24, align: 8, offsets: {'ext': 0, 'min_decode_interval_ms': 16} },
+  'transcribe_parakeet_tdt_window_ext': { size: 32, align: 8, offsets: {'ext': 0, 'decode_start_frame': 16, 'decode_end_frame': 20, 'timestamp_offset_frames': 24, 'finalize_tail': 28} },
   'transcribe_parakeet_stream_ext': { size: 24, align: 8, offsets: {'ext': 0, 'att_context_right': 16} },
   'transcribe_parakeet_buffered_stream_ext': { size: 32, align: 8, offsets: {'ext': 0, 'left_ms': 16, 'chunk_ms': 20, 'right_ms': 24} },
   'transcribe_sortformer_diarize_ext': { size: 24, align: 8, offsets: {'ext': 0, 'preset': 16} },
@@ -214,6 +218,7 @@ export const ABI_STRUCT_IDS: Record<string, number> = {
   'transcribe_langid_params': 21,
   'transcribe_langid_result': 22,
   'transcribe_langid_candidate': 23,
+  'transcribe_parakeet_tdt_window_ext': 29,
   'transcribe_vad_info': 24,
   'transcribe_vad_session_params': 25,
   'transcribe_vad_params': 26,
@@ -249,6 +254,7 @@ export function defineTypes(koffi: any): Record<string, any> {
   T['transcribe_langid_result'] = koffi.struct({ struct_size: 'uint64_t', n_candidates: 'int32_t', allowed_mass: 'float' });
   T['transcribe_langid_candidate'] = koffi.struct({ struct_size: 'uint64_t', index: 'int32_t', code: 'char *', name: 'char *', p: 'float', logit: 'float' });
   T['transcribe_moonshine_streaming_stream_ext'] = koffi.struct({ ext: T['transcribe_ext'], min_decode_interval_ms: 'int32_t' });
+  T['transcribe_parakeet_tdt_window_ext'] = koffi.struct({ ext: T['transcribe_ext'], decode_start_frame: 'int32_t', decode_end_frame: 'int32_t', timestamp_offset_frames: 'int32_t', finalize_tail: 'bool' });
   T['transcribe_parakeet_stream_ext'] = koffi.struct({ ext: T['transcribe_ext'], att_context_right: 'int32_t' });
   T['transcribe_parakeet_buffered_stream_ext'] = koffi.struct({ ext: T['transcribe_ext'], left_ms: 'int32_t', chunk_ms: 'int32_t', right_ms: 'int32_t' });
   T['transcribe_sortformer_diarize_ext'] = koffi.struct({ ext: T['transcribe_ext'], preset: 'int' });
@@ -288,6 +294,7 @@ export const FUNCTION_SIGNATURES: Record<string, FnSig> = {
   'transcribe_capabilities_init': { ret: 'void', args: ['struct transcribe_capabilities *'] },
   'transcribe_close': { ret: 'void', args: ['struct transcribe_session *'] },
   'transcribe_detected_language': { ret: 'const char *', args: ['const struct transcribe_session *'] },
+  'transcribe_detokenize': { ret: 'int', args: ['const struct transcribe_model *', 'const int32_t *', 'int', 'char *', 'size_t'] },
   'transcribe_device_count': { ret: 'int', args: [] },
   'transcribe_device_get': { ret: 'transcribe_device_t', args: ['int'] },
   'transcribe_device_get_info': { ret: 'transcribe_status', args: ['transcribe_device_t', 'struct transcribe_device_info *'] },
@@ -313,6 +320,8 @@ export const FUNCTION_SIGNATURES: Record<string, FnSig> = {
   'transcribe_get_whisper_chunk_count': { ret: 'int', args: ['const struct transcribe_session *'] },
   'transcribe_get_whisper_chunk_trace': { ret: 'transcribe_status', args: ['const struct transcribe_session *', 'int', 'struct transcribe_whisper_chunk_trace *'] },
   'transcribe_get_word': { ret: 'transcribe_status', args: ['const struct transcribe_session *', 'int', 'struct transcribe_word *'] },
+  'transcribe_grain_contract_revision': { ret: 'uint32_t', args: [] },
+  'transcribe_grain_patch_id': { ret: 'const char *', args: [] },
   'transcribe_init_backends': { ret: 'transcribe_status', args: ['const char *'] },
   'transcribe_init_backends_default': { ret: 'transcribe_status', args: [] },
   'transcribe_init_backends_ex': { ret: 'transcribe_status', args: ['const struct transcribe_backend_init_params *'] },
@@ -353,6 +362,7 @@ export const FUNCTION_SIGNATURES: Record<string, FnSig> = {
   'transcribe_open': { ret: 'transcribe_status', args: ['const char *', 'const struct transcribe_model_load_params *', 'const struct transcribe_session_params *', 'struct transcribe_session **'] },
   'transcribe_parakeet_buffered_stream_ext_init': { ret: 'void', args: ['struct transcribe_parakeet_buffered_stream_ext *'] },
   'transcribe_parakeet_stream_ext_init': { ret: 'void', args: ['struct transcribe_parakeet_stream_ext *'] },
+  'transcribe_parakeet_tdt_window_ext_init': { ret: 'void', args: ['struct transcribe_parakeet_tdt_window_ext *'] },
   'transcribe_print_timings': { ret: 'void', args: ['const struct transcribe_session *'] },
   'transcribe_raw_text': { ret: 'const char *', args: ['const struct transcribe_session *'] },
   'transcribe_reset_timings': { ret: 'void', args: ['struct transcribe_session *'] },
@@ -360,6 +370,7 @@ export const FUNCTION_SIGNATURES: Record<string, FnSig> = {
   'transcribe_run': { ret: 'transcribe_status', args: ['struct transcribe_session *', 'const float *', 'int', 'const struct transcribe_run_params *'] },
   'transcribe_run_batch': { ret: 'transcribe_status', args: ['struct transcribe_session *', 'const float *const *', 'const int *', 'int', 'const struct transcribe_run_params *'] },
   'transcribe_run_params_init': { ret: 'void', args: ['struct transcribe_run_params *'] },
+  'transcribe_runtime_header_hash': { ret: 'const char *', args: [] },
   'transcribe_segment_init': { ret: 'void', args: ['struct transcribe_segment *'] },
   'transcribe_session_free': { ret: 'void', args: ['struct transcribe_session *'] },
   'transcribe_session_get_limits': { ret: 'transcribe_status', args: ['const struct transcribe_session *', 'struct transcribe_session_limits *'] },

@@ -89,6 +89,9 @@ pub enum Error {
     /// A caller-supplied string contained an interior NUL byte.
     #[error("string contains an interior NUL byte: {0}")]
     Nul(#[from] std::ffi::NulError),
+    /// Native tokenizer output was not valid UTF-8.
+    #[error("detokenized bytes are not valid UTF-8: {0}")]
+    Utf8(#[from] std::string::FromUtf8Error),
     /// Another session of the same model already has a compute operation in
     /// flight. The C library serializes compute per model (the 0.x limitation):
     /// at most one run / batch / active stream across ALL of a model's sessions
@@ -130,6 +133,7 @@ pub enum ErrorKind {
     UnsupportedRole,
     VersionMismatch,
     Nul,
+    Utf8,
     Busy,
     InputTooShort,
     #[cfg_attr(feature = "serde", serde(other))]
@@ -239,6 +243,7 @@ impl Error {
             Error::InputTooShort(_) => ErrorKind::InputTooShort,
             Error::VersionMismatch(_) => ErrorKind::VersionMismatch,
             Error::Nul(_) => ErrorKind::Nul,
+            Error::Utf8(_) => ErrorKind::Utf8,
             Error::Busy(_) => ErrorKind::Busy,
             Error::Other(_) => ErrorKind::Other,
         }
@@ -265,7 +270,7 @@ impl Error {
             Error::InputTooShort(_) => S::TRANSCRIBE_ERR_INPUT_TOO_SHORT,
             _ => S::TRANSCRIBE_OK,
         };
-        s.0 as i32
+        s.0
     }
 
     /// The partial transcript carried by [`Error::Aborted`] /
@@ -297,7 +302,7 @@ pub(crate) fn status_string(status: i32) -> String {
 /// The run path re-attaches partials for the two result-bearing statuses.
 pub(crate) fn error_for_status(status: sys::transcribe_status, context: &str) -> Error {
     use sys::transcribe_status as S;
-    let code = status.0 as i32;
+    let code = status.0;
     let msg = {
         let s = status_string(code);
         if context.is_empty() {
@@ -357,14 +362,25 @@ mod tests {
     use std::mem::discriminant;
     use sys::transcribe_status as S;
 
+    #[cfg(feature = "serde")]
+    #[test]
+    fn detokenization_utf8_error_survives_the_report_boundary() {
+        let error = Error::Utf8(String::from_utf8(vec![0xff]).unwrap_err());
+        let encoded = serde_json::to_string(&error).unwrap();
+        let report: ErrorReport = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(report.kind, ErrorKind::Utf8);
+        assert_eq!(report.status, 0);
+        assert!(report.partial.is_none());
+    }
+
     #[test]
     fn every_status_maps_to_a_typed_variant() {
         // Every non-OK status the linked library knows, found by walking codes
         // upward until `transcribe_status_string` falls back to its "unknown"
         // text, so a status appended to the header without a mapping fails here.
         let unknown = status_string(-1);
-        let codes: Vec<S> = (1..256u32)
-            .take_while(|&c| status_string(c as i32) != unknown)
+        let codes: Vec<S> = (1..256i32)
+            .take_while(|&c| status_string(c) != unknown)
             .map(S)
             .collect();
         assert!(
@@ -384,7 +400,7 @@ mod tests {
             // primary status, never 0).
             let raw = err.raw_status();
             assert_ne!(raw, 0, "status {code} reports raw_status 0: {err:?}");
-            let back = error_for_status(S(raw as u32), "ctx");
+            let back = error_for_status(S(raw), "ctx");
             assert_eq!(
                 discriminant(&back),
                 discriminant(&err),

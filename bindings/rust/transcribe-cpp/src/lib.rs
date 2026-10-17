@@ -37,11 +37,10 @@
 //!
 //! # ABI verification
 //!
-//! The per-field struct-layout check that the ctypes binding performs is
-//! **waived** here: bindgen takes every struct's layout from a real compiler at
-//! generation time, so the generated FFI cannot disagree with the headers it
-//! was built against. The load-time base-version lock (see [`Model::load`]) is
-//! retained.
+//! Before model loading, [`ensure_compatible`] checks the linked library's base
+//! version, Grain contract revision/identity, semantic ABI digest, and native
+//! sizes/alignments against the generated Rust structs. Call it at startup for
+//! package diagnostics too. Git metadata is not required.
 
 #![doc(html_root_url = "https://docs.rs/transcribe-cpp")]
 #![warn(missing_debug_implementations)]
@@ -72,8 +71,8 @@ pub use diarize::{DiarizeInfo, DiarizeOptions, DiarizeSession, DiarizeSessionOpt
 pub use error::{Error, ErrorKind, ErrorReport, Result};
 pub use family::{
     DiarizeExtension, MoonshineStreamingOptions, ParakeetBufferedStreamOptions,
-    ParakeetStreamOptions, RunExtension, SortformerDiarizeOptions, SortformerPreset,
-    StreamExtension, VoxtralRealtimeStreamOptions, WhisperRunOptions,
+    ParakeetStreamOptions, ParakeetTdtWindowOptions, RunExtension, SortformerDiarizeOptions,
+    SortformerPreset, StreamExtension, VoxtralRealtimeStreamOptions, WhisperRunOptions,
 };
 pub use langid::{
     LangIdCandidate, LangIdInfo, LangIdOptions, LangIdResult, LangIdSession, LangIdSessionOptions,
@@ -89,7 +88,9 @@ pub use types::{
 };
 pub use vad::{VadInfo, VadOptions, VadResult, VadSegment, VadSession, VadSessionOptions};
 pub use version::{
-    abi_struct_align, abi_struct_size, compiled_version, header_hash, version, version_commit,
+    abi_struct_align, abi_struct_size, compiled_version, ensure_compatible,
+    grain_contract_revision, grain_patch_id, header_hash, runtime_header_hash, version,
+    version_commit,
 };
 
 /// Convenience: load a model, transcribe one PCM buffer, and return the result.

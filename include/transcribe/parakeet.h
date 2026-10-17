@@ -28,6 +28,36 @@ extern "C" {
 #define TRANSCRIBE_EXT_KIND_PARAKEET_STREAM          0x54534B50u
 /* 'PKBS' little-endian = 0x53424B50 */
 #define TRANSCRIBE_EXT_KIND_PARAKEET_BUFFERED_STREAM 0x53424B50u
+/* 'PKFW' little-endian = 0x57464B50 */
+#define TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW      0x57464B50u
+
+/*
+ * Stateless Parakeet TDT window decode (offline run slot).
+ *
+ * This is a decoder-boundary extension for callers that already own a
+ * bounded, overlapping audio-window policy. Every transcribe_run remains a
+ * fresh utterance: predictor state never carries across calls.
+ *
+ * decode_start_frame and decode_end_frame select the half-open encoder-frame
+ * interval [start, end). timestamp_offset_frames is added after decoding so
+ * token timestamps are absolute in the caller's recording. finalize_tail
+ * enables the Parakeet TDT boundary drain used only for the unfinished final
+ * window. The extension is accepted only by offline Parakeet TDT v2/v3.
+ *
+ * All frame values are at the model encoder rate (80 ms for v2/v3). Values
+ * must satisfy 0 <= start < end and timestamp_offset_frames >= 0. A range
+ * beyond the encoder output is rejected without clamping.
+ */
+struct transcribe_parakeet_tdt_window_ext {
+    struct transcribe_ext ext;
+    int32_t               decode_start_frame;
+    int32_t               decode_end_frame;
+    int32_t               timestamp_offset_frames;
+    bool                  finalize_tail;
+};
+
+/* Stamps the header; the zero frame range is intentionally invalid. */
+TRANSCRIBE_API void transcribe_parakeet_tdt_window_ext_init(struct transcribe_parakeet_tdt_window_ext * ext);
 
 /*
  * Cache-aware streaming knob (nemotron-speech-streaming-en-0.6b).
