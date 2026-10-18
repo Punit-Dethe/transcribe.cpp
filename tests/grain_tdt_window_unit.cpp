@@ -340,7 +340,26 @@ void check_buffered_continuation() {
     model.variant               = "tdt-0.6b-v3";
     model.host_decoder.blank_id = 8192;
     CHECK(
+        transcribe_model_accepts_ext_kind(&model, TRANSCRIBE_EXT_SLOT_RUN, TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED));
+    CHECK(arch.run_validate(&session, &params) == TRANSCRIBE_OK);
+    model.host_decoder.tdt_global_symbol_budget = true;
+    CHECK(
         !transcribe_model_accepts_ext_kind(&model, TRANSCRIBE_EXT_SLOT_RUN, TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED));
+    model.host_decoder.tdt_global_symbol_budget = false;
+    model.host_decoder.blank_id                 = 1024;
+    CHECK(
+        !transcribe_model_accepts_ext_kind(&model, TRANSCRIBE_EXT_SLOT_RUN, TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED));
+    model.host_decoder.blank_id         = 8192;
+    model.host_decoder.tdt_durations[4] = 5;
+    CHECK(
+        !transcribe_model_accepts_ext_kind(&model, TRANSCRIBE_EXT_SLOT_RUN, TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED));
+    model.host_decoder.tdt_durations[4] = 4;
+    model.host_decoder.head_kind        = HostHeadKind::RNNT;
+    CHECK(
+        !transcribe_model_accepts_ext_kind(&model, TRANSCRIBE_EXT_SLOT_RUN, TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED));
+    model.host_decoder.head_kind = HostHeadKind::TDT;
+    CHECK(!transcribe_model_accepts_ext_kind(&model, TRANSCRIBE_EXT_SLOT_STREAM,
+                                             TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED));
 }
 
 void check_model_gates() {
