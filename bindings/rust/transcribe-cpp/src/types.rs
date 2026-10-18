@@ -335,6 +335,7 @@ pub enum AbiStruct {
     VadResult,
     VadSegment,
     ParakeetTdtWindowExt,
+    ParakeetTdtBufferedExt,
 }
 
 impl AbiStruct {
@@ -370,6 +371,7 @@ impl AbiStruct {
             AbiStruct::VadParams => A::TRANSCRIBE_ABI_VAD_PARAMS,
             AbiStruct::VadResult => A::TRANSCRIBE_ABI_VAD_RESULT,
             AbiStruct::VadSegment => A::TRANSCRIBE_ABI_VAD_SEGMENT,
+            AbiStruct::ParakeetTdtBufferedExt => A::TRANSCRIBE_ABI_PARAKEET_TDT_BUFFERED_EXT,
             AbiStruct::ParakeetTdtWindowExt => A::TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT,
         }
     }

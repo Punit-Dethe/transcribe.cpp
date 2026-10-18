@@ -91,6 +91,25 @@ impl ParakeetTdtWindowOptions {
     pub const KIND: u32 = sys::TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW;
 }
 
+/// Stateful v2 buffered TDT. Encode the complete context buffer, decode only
+/// the owned frame range, then retain predictor state for the next run.
+/// Start an utterance with `reset`, and release it with `finalize` or
+/// [`Session::reset`](crate::Session::reset). A final end of -1 consumes all
+/// remaining real encoder frames. Offsets identify the absolute owned start.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ParakeetTdtBufferedOptions {
+    pub decode_start_frame: i32,
+    pub decode_end_frame: i32,
+    pub timestamp_offset_frames: i32,
+    pub reset: bool,
+    pub finalize: bool,
+}
+
+impl ParakeetTdtBufferedOptions {
+    pub const KIND: u32 = sys::TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED;
+}
+
 /// Voxtral-realtime streaming knobs (stream slot).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(
@@ -196,6 +215,7 @@ impl DiarizeExtension {
 pub enum RunExtension {
     Whisper(WhisperRunOptions),
     ParakeetTdtWindow(ParakeetTdtWindowOptions),
+    ParakeetTdtBuffered(ParakeetTdtBufferedOptions),
 }
 
 /// A family extension for the stream slot.
@@ -219,6 +239,7 @@ pub(crate) enum RunExtRaw {
         _prompt: Option<CString>,
     },
     ParakeetTdtWindow(Box<sys::transcribe_parakeet_tdt_window_ext>),
+    ParakeetTdtBuffered(Box<sys::transcribe_parakeet_tdt_buffered_ext>),
 }
 
 impl RunExtRaw {
@@ -227,6 +248,10 @@ impl RunExtRaw {
             // `ext` is field 0, so &ext == &the family struct.
             RunExtRaw::Whisper { ext, .. } => {
                 (&**ext) as *const sys::transcribe_whisper_run_ext as *const sys::transcribe_ext
+            }
+            RunExtRaw::ParakeetTdtBuffered(e) => {
+                (&**e) as *const sys::transcribe_parakeet_tdt_buffered_ext
+                    as *const sys::transcribe_ext
             }
             RunExtRaw::ParakeetTdtWindow(e) => {
                 (&**e) as *const sys::transcribe_parakeet_tdt_window_ext
@@ -264,6 +289,17 @@ impl RunExtension {
                     ext: Box::new(ext),
                     _prompt: prompt,
                 })
+            }
+            RunExtension::ParakeetTdtBuffered(o) => {
+                let mut ext: sys::transcribe_parakeet_tdt_buffered_ext =
+                    unsafe { std::mem::zeroed() };
+                unsafe { sys::transcribe_parakeet_tdt_buffered_ext_init(&mut ext) };
+                ext.decode_start_frame = o.decode_start_frame;
+                ext.decode_end_frame = o.decode_end_frame;
+                ext.timestamp_offset_frames = o.timestamp_offset_frames;
+                ext.reset = o.reset;
+                ext.finalize = o.finalize;
+                Ok(RunExtRaw::ParakeetTdtBuffered(Box::new(ext)))
             }
             RunExtension::ParakeetTdtWindow(o) => {
                 let mut ext: sys::transcribe_parakeet_tdt_window_ext =
@@ -378,6 +414,48 @@ mod tests {
         let decoded: crate::RunOptions =
             postcard::from_bytes(&binary).expect("decode binary request");
         assert_eq!(decoded, options);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn buffered_run_options_survive_worker_transport() {
+        let options = crate::RunOptions {
+            family: Some(RunExtension::ParakeetTdtBuffered(
+                super::ParakeetTdtBufferedOptions {
+                    decode_start_frame: 125,
+                    decode_end_frame: -1,
+                    timestamp_offset_frames: 250,
+                    reset: false,
+                    finalize: true,
+                },
+            )),
+            ..Default::default()
+        };
+        let json = serde_json::to_vec(&options).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<crate::RunOptions>(&json).unwrap(),
+            options
+        );
+        let binary = postcard::to_allocvec(&options).unwrap();
+        assert_eq!(
+            postcard::from_bytes::<crate::RunOptions>(&binary).unwrap(),
+            options
+        );
+        let RunExtRaw::ParakeetTdtBuffered(ext) = options.family.unwrap().materialize().unwrap()
+        else {
+            panic!("wrong kind")
+        };
+        assert_eq!(ext.ext.kind, sys::TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED);
+        assert_eq!(ext.ext.size as usize, std::mem::size_of_val(&*ext));
+        assert_eq!(
+            (
+                ext.decode_start_frame,
+                ext.decode_end_frame,
+                ext.timestamp_offset_frames
+            ),
+            (125, -1, 250)
+        );
+        assert!(!ext.reset && ext.finalize);
     }
 
     #[test]

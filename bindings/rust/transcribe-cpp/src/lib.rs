@@ -71,8 +71,9 @@ pub use diarize::{DiarizeInfo, DiarizeOptions, DiarizeSession, DiarizeSessionOpt
 pub use error::{Error, ErrorKind, ErrorReport, Result};
 pub use family::{
     DiarizeExtension, MoonshineStreamingOptions, ParakeetBufferedStreamOptions,
-    ParakeetStreamOptions, ParakeetTdtWindowOptions, RunExtension, SortformerDiarizeOptions,
-    SortformerPreset, StreamExtension, VoxtralRealtimeStreamOptions, WhisperRunOptions,
+    ParakeetStreamOptions, ParakeetTdtBufferedOptions, ParakeetTdtWindowOptions, RunExtension,
+    SortformerDiarizeOptions, SortformerPreset, StreamExtension, VoxtralRealtimeStreamOptions,
+    WhisperRunOptions,
 };
 pub use langid::{
     LangIdCandidate, LangIdInfo, LangIdOptions, LangIdResult, LangIdSession, LangIdSessionOptions,

@@ -223,6 +223,8 @@ extern "C" size_t transcribe_abi_struct_size(transcribe_abi_struct which) {
             return sizeof(struct transcribe_vad_segment);
         case TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT:
             return sizeof(struct transcribe_parakeet_tdt_window_ext);
+        case TRANSCRIBE_ABI_PARAKEET_TDT_BUFFERED_EXT:
+            return sizeof(struct transcribe_parakeet_tdt_buffered_ext);
     }
     return 0;  // unknown id: "cannot verify", never a real size
 }
@@ -289,6 +291,8 @@ extern "C" size_t transcribe_abi_struct_align(transcribe_abi_struct which) {
             return alignof(struct transcribe_vad_segment);
         case TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT:
             return alignof(struct transcribe_parakeet_tdt_window_ext);
+        case TRANSCRIBE_ABI_PARAKEET_TDT_BUFFERED_EXT:
+            return alignof(struct transcribe_parakeet_tdt_buffered_ext);
     }
     return 0;
 }

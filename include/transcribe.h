@@ -361,8 +361,8 @@ TRANSCRIBE_API const char * transcribe_version_commit(void);
  * Git metadata; present in source-archive builds too. Bump the revision and
  * identity when the detokenize/PKFW semantics change. String results borrow
  * static storage. Queries allocate nothing and never initialize backends. */
-#define TRANSCRIBE_GRAIN_CONTRACT_REVISION 3
-#define TRANSCRIBE_GRAIN_PATCH_ID          "grain-flow-v1"
+#define TRANSCRIBE_GRAIN_CONTRACT_REVISION 4
+#define TRANSCRIBE_GRAIN_PATCH_ID          "grain-flow-v2"
 TRANSCRIBE_API uint32_t     transcribe_grain_contract_revision(void);
 TRANSCRIBE_API const char * transcribe_grain_patch_id(void);
 /* Semantic digest of the public headers compiled into this library. */
@@ -385,39 +385,40 @@ TRANSCRIBE_API const char * transcribe_runtime_header_hash(void);
  * is append-only; do not renumber existing values.
  */
 typedef enum {
-    TRANSCRIBE_ABI_MODEL_LOAD_PARAMS       = 0,
-    TRANSCRIBE_ABI_SESSION_PARAMS          = 1,
-    TRANSCRIBE_ABI_RUN_PARAMS              = 2,
-    TRANSCRIBE_ABI_STREAM_PARAMS           = 3,
-    TRANSCRIBE_ABI_CAPABILITIES            = 4,
-    TRANSCRIBE_ABI_TIMINGS                 = 5,
-    TRANSCRIBE_ABI_SEGMENT                 = 6,
-    TRANSCRIBE_ABI_WORD                    = 7,
-    TRANSCRIBE_ABI_TOKEN                   = 8,
-    TRANSCRIBE_ABI_STREAM_UPDATE           = 9,
-    TRANSCRIBE_ABI_STREAM_TEXT             = 10,
-    TRANSCRIBE_ABI_SESSION_LIMITS          = 11,
-    TRANSCRIBE_ABI_EXT                     = 12,
-    TRANSCRIBE_ABI_DEVICE_INFO             = 13,
-    TRANSCRIBE_ABI_SPEAKER_SEGMENT         = 14,
-    TRANSCRIBE_ABI_BACKEND_INIT_PARAMS     = 15,
+    TRANSCRIBE_ABI_MODEL_LOAD_PARAMS         = 0,
+    TRANSCRIBE_ABI_SESSION_PARAMS            = 1,
+    TRANSCRIBE_ABI_RUN_PARAMS                = 2,
+    TRANSCRIBE_ABI_STREAM_PARAMS             = 3,
+    TRANSCRIBE_ABI_CAPABILITIES              = 4,
+    TRANSCRIBE_ABI_TIMINGS                   = 5,
+    TRANSCRIBE_ABI_SEGMENT                   = 6,
+    TRANSCRIBE_ABI_WORD                      = 7,
+    TRANSCRIBE_ABI_TOKEN                     = 8,
+    TRANSCRIBE_ABI_STREAM_UPDATE             = 9,
+    TRANSCRIBE_ABI_STREAM_TEXT               = 10,
+    TRANSCRIBE_ABI_SESSION_LIMITS            = 11,
+    TRANSCRIBE_ABI_EXT                       = 12,
+    TRANSCRIBE_ABI_DEVICE_INFO               = 13,
+    TRANSCRIBE_ABI_SPEAKER_SEGMENT           = 14,
+    TRANSCRIBE_ABI_BACKEND_INIT_PARAMS       = 15,
     /* include/transcribe/diarize.h */
-    TRANSCRIBE_ABI_DIARIZE_INFO            = 16,
-    TRANSCRIBE_ABI_DIARIZE_SESSION_PARAMS  = 17,
-    TRANSCRIBE_ABI_DIARIZE_PARAMS          = 18,
+    TRANSCRIBE_ABI_DIARIZE_INFO              = 16,
+    TRANSCRIBE_ABI_DIARIZE_SESSION_PARAMS    = 17,
+    TRANSCRIBE_ABI_DIARIZE_PARAMS            = 18,
     /* include/transcribe/langid.h */
-    TRANSCRIBE_ABI_LANGID_INFO             = 19,
-    TRANSCRIBE_ABI_LANGID_SESSION_PARAMS   = 20,
-    TRANSCRIBE_ABI_LANGID_PARAMS           = 21,
-    TRANSCRIBE_ABI_LANGID_RESULT           = 22,
-    TRANSCRIBE_ABI_LANGID_CANDIDATE        = 23,
+    TRANSCRIBE_ABI_LANGID_INFO               = 19,
+    TRANSCRIBE_ABI_LANGID_SESSION_PARAMS     = 20,
+    TRANSCRIBE_ABI_LANGID_PARAMS             = 21,
+    TRANSCRIBE_ABI_LANGID_RESULT             = 22,
+    TRANSCRIBE_ABI_LANGID_CANDIDATE          = 23,
     /* include/transcribe/vad.h */
-    TRANSCRIBE_ABI_VAD_INFO                = 24,
-    TRANSCRIBE_ABI_VAD_SESSION_PARAMS      = 25,
-    TRANSCRIBE_ABI_VAD_PARAMS              = 26,
-    TRANSCRIBE_ABI_VAD_RESULT              = 27,
-    TRANSCRIBE_ABI_VAD_SEGMENT             = 28,
-    TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT = 29,
+    TRANSCRIBE_ABI_VAD_INFO                  = 24,
+    TRANSCRIBE_ABI_VAD_SESSION_PARAMS        = 25,
+    TRANSCRIBE_ABI_VAD_PARAMS                = 26,
+    TRANSCRIBE_ABI_VAD_RESULT                = 27,
+    TRANSCRIBE_ABI_VAD_SEGMENT               = 28,
+    TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT   = 29,
+    TRANSCRIBE_ABI_PARAKEET_TDT_BUFFERED_EXT = 30,
 } transcribe_abi_struct;
 
 /* sizeof / alignof of the selected public struct, or 0 for an unknown id.

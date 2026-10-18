@@ -30,6 +30,7 @@ extern "C" {
 #define TRANSCRIBE_EXT_KIND_PARAKEET_BUFFERED_STREAM 0x53424B50u
 /* 'PKFW' little-endian = 0x57464B50 */
 #define TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW      0x57464B50u
+#define TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED    0x46424B50u
 
 /*
  * Stateless Parakeet TDT window decode (offline run slot).
@@ -58,6 +59,24 @@ struct transcribe_parakeet_tdt_window_ext {
 
 /* Stamps the header; the zero frame range is intentionally invalid. */
 TRANSCRIBE_API void transcribe_parakeet_tdt_window_ext_init(struct transcribe_parakeet_tdt_window_ext * ext);
+
+/* V2-only stateful buffered decoding. Encoder input includes left/right
+ * context; only [decode_start_frame, decode_end_frame) is decoded. -1 for
+ * decode_end_frame is accepted only on finalize, consuming every remaining
+ * real encoder frame. timestamp_offset_frames is the absolute OWNED start.
+ * reset starts a fresh utterance at offset 0. Subsequent offsets must be
+ * contiguous. finalize, reset, failed runs and stream_reset release state.
+ * Do not merge outputs: owned frames are decoded once and tokens append. */
+struct transcribe_parakeet_tdt_buffered_ext {
+    struct transcribe_ext ext;
+    int32_t               decode_start_frame;
+    int32_t               decode_end_frame;
+    int32_t               timestamp_offset_frames;
+    bool                  reset;
+    bool                  finalize;
+};
+
+TRANSCRIBE_API void transcribe_parakeet_tdt_buffered_ext_init(struct transcribe_parakeet_tdt_buffered_ext * ext);
 
 /*
  * Cache-aware streaming knob (nemotron-speech-streaming-en-0.6b).

@@ -163,6 +163,15 @@ impl Session {
         unsafe { sys::transcribe_was_truncated(self.ptr) }
     }
 
+    /// Release per-utterance native state, including buffered TDT continuation.
+    /// The model and reusable compute allocations stay loaded.
+    pub fn reset(&mut self) -> Result<()> {
+        self.model.with_compute(
+            Some("a stream is active on this model; finish or drop it before reset()"),
+            |_| unsafe { sys::transcribe_stream_reset(self.ptr) },
+        )
+    }
+
     /// Transcribe one buffer of 16 kHz mono float32 PCM in `[-1, 1]`.
     ///
     /// On an aborted, truncated, or repetition-stopped decode the partial

@@ -2,7 +2,7 @@ name: Grain fork contract
 
 on:
   push:
-    branches: ["codex/grain-*", "grain/**", "sync/grain-*"]
+    branches: ["codex/grain-*", "grain/**", "sync/grain-*", "flow/**"]
   pull_request:
   workflow_dispatch:
 

@@ -134,6 +134,10 @@ pub fn ensure_compatible() -> Result<()> {
             };
         }
         let layouts = [
+            layout!(
+                ParakeetTdtBufferedExt,
+                sys::transcribe_parakeet_tdt_buffered_ext
+            ),
             layout!(ModelLoadParams, sys::transcribe_model_load_params),
             layout!(SessionParams, sys::transcribe_session_params),
             layout!(RunParams, sys::transcribe_run_params),

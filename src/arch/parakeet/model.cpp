@@ -866,6 +866,32 @@ static transcribe_status decode_and_populate(ParakeetSession *             pc,
                                 token.step_at_emit = static_cast<int>(absolute);
                             }
                         }
+                    } else if (params != nullptr && params->family != nullptr &&
+                               params->family->kind == TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED) {
+                        const auto * ext =
+                            reinterpret_cast<const transcribe_parakeet_tdt_buffered_ext *>(params->family);
+                        const int end = ext->decode_end_frame == -1 && ext->finalize ? T_enc : ext->decode_end_frame;
+                        if (ext->decode_start_frame < 0 || end <= ext->decode_start_frame || end > T_enc ||
+                            ext->timestamp_offset_frames < 0 ||
+                            ext->timestamp_offset_frames >
+                                std::numeric_limits<int>::max() - (end - ext->decode_start_frame)) {
+                            return TRANSCRIBE_ERR_INVALID_ARG;
+                        }
+                        if (ext->reset) {
+                            pc->tdt_buffered = std::make_unique<TdtBufferedState>();
+                        }
+                        if (!pc->tdt_buffered || pc->tdt_buffered->next_frame != ext->timestamp_offset_frames) {
+                            return TRANSCRIBE_ERR_INVALID_ARG;
+                        }
+                        st = decode_tdt_buffered(
+                            pm->host_decoder,
+                            enc + static_cast<size_t>(ext->decode_start_frame) * static_cast<size_t>(d_enc),
+                            end - ext->decode_start_frame, d_enc, pc->n_threads, *pc->tdt_buffered, pc->raw_tokens);
+                        if (st == TRANSCRIBE_OK) {
+                            for (auto & token : pc->raw_tokens) {
+                                token.step_at_emit += ext->timestamp_offset_frames;
+                            }
+                        }
                     } else {
                         st = decode_tdt_greedy(pm->host_decoder, enc, T_enc, d_enc, pc->n_threads, pc->raw_tokens);
                     }
@@ -1818,6 +1844,23 @@ transcribe_status run(transcribe_session *          session,
     // orchestrator (per-speaker passes + merged speaker-tagged result).
     // Without an embedded diarizer the dispatcher has already WARNed and we
     // proceed single-speaker, preserving the shipped behavior.
+    const bool buffered = params != nullptr && params->family != nullptr &&
+                          params->family->kind == TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED;
+
+    struct BufferedRunGuard {
+        ParakeetSession * session;
+        bool              keep = false;
+
+        ~BufferedRunGuard() {
+            if (!keep) {
+                session->tdt_buffered.reset();
+            }
+        }
+    } buffered_guard{ pc };
+
+    if (!buffered) {
+        pc->tdt_buffered.reset();
+    }
     if (params != nullptr && params->diarize == TRANSCRIBE_DIARIZE_MODE_ON && pm->diar != nullptr) {
         return run_multitalker(pc, pm, pcm, n_samples, params);
     }
@@ -1826,7 +1869,10 @@ transcribe_status run(transcribe_session *          session,
         return run_longform(pc, pm, pcm, n_samples, params);
     }
 
-    return run_one_shot_inner(pc, pm, pcm, n_samples, params);
+    const auto status   = run_one_shot_inner(pc, pm, pcm, n_samples, params);
+    buffered_guard.keep = buffered && status == TRANSCRIBE_OK &&
+                          !reinterpret_cast<const transcribe_parakeet_tdt_buffered_ext *>(params->family)->finalize;
+    return status;
 }
 
 // ---------------------------------------------------------------------------
@@ -2070,6 +2116,11 @@ transcribe_status run_batch(transcribe_session *          session,
     auto * pc = static_cast<ParakeetSession *>(session);
     auto * pm = static_cast<ParakeetModel *>(pc->model);
     if (pm == nullptr || pm->plan.scheduler_list.empty() || !pm->mel.has_value()) {
+        return TRANSCRIBE_ERR_INVALID_ARG;
+    }
+    pc->tdt_buffered.reset();
+    // Buffered TDT state is sequential and cannot represent a batch.
+    if (params && params->family && params->family->kind == TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED) {
         return TRANSCRIBE_ERR_INVALID_ARG;
     }
     transcribe::debug::init();
@@ -3852,6 +3903,7 @@ transcribe_status stream_finalize(transcribe_session * session, transcribe_strea
 
 void stream_reset(transcribe_session * session) {
     auto * pc = static_cast<ParakeetSession *>(session);
+    pc->tdt_buffered.reset();
     pc->stream_pcm_buffer.clear();  // keep the allocation
     pc->stream_audio_input_samples = 0;
 }
@@ -3872,6 +3924,9 @@ bool accepts_ext_kind(const transcribe_model * model, transcribe_ext_slot slot, 
                                              (pm->variant == "tdt-0.6b-v3" && pm->host_decoder.blank_id == 8192);
         const bool   reviewed_tdt =
             pm->host_decoder.head_kind == HostHeadKind::TDT && exact_fluid_blank && exact_fluid_durations;
+        if (kind == TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED) {
+            return reviewed_tdt && pm->variant == "tdt-0.6b-v2" && !pm->host_decoder.tdt_global_symbol_budget;
+        }
         return reviewed_tdt && kind == TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW;
     }
     if (slot != TRANSCRIBE_EXT_SLOT_STREAM) {
@@ -3892,14 +3947,32 @@ transcribe_status run_validate(const transcribe_session * session, const transcr
     if (params == nullptr || params->family == nullptr) {
         return TRANSCRIBE_OK;
     }
-    if (const transcribe_status st = transcribe_ext_check(params->family, TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW,
-                                                          sizeof(struct transcribe_parakeet_tdt_window_ext));
+    const bool buffered = params->family->kind == TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED;
+    if (const transcribe_status st = transcribe_ext_check(
+            params->family,
+            buffered ? TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED : TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW,
+            buffered ? sizeof(struct transcribe_parakeet_tdt_buffered_ext) :
+                       sizeof(struct transcribe_parakeet_tdt_window_ext));
         st != TRANSCRIBE_OK) {
         return st;
     }
     if (session == nullptr || session->model == nullptr ||
         !accepts_ext_kind(session->model, TRANSCRIBE_EXT_SLOT_RUN, params->family->kind)) {
         return TRANSCRIBE_ERR_INVALID_ARG;
+    }
+    if (buffered) {
+        const auto * ext = reinterpret_cast<const transcribe_parakeet_tdt_buffered_ext *>(params->family);
+        if (ext->decode_start_frame < 0 ||
+            (ext->decode_end_frame <= ext->decode_start_frame && !(ext->finalize && ext->decode_end_frame == -1)) ||
+            ext->timestamp_offset_frames < 0 || (ext->reset && ext->timestamp_offset_frames != 0) ||
+            params->diarize == TRANSCRIBE_DIARIZE_MODE_ON) {
+            return TRANSCRIBE_ERR_INVALID_ARG;
+        }
+        const auto * pc = static_cast<const ParakeetSession *>(session);
+        if (!ext->reset && (!pc->tdt_buffered || pc->tdt_buffered->next_frame != ext->timestamp_offset_frames)) {
+            return TRANSCRIBE_ERR_INVALID_ARG;
+        }
+        return TRANSCRIBE_OK;
     }
     const auto * ext = reinterpret_cast<const transcribe_parakeet_tdt_window_ext *>(params->family);
     if (ext->decode_start_frame < 0 || ext->decode_end_frame <= ext->decode_start_frame ||
@@ -3965,4 +4038,13 @@ extern "C" void transcribe_parakeet_tdt_window_ext_init(struct transcribe_parake
     std::memset(p, 0, sizeof(*p));
     p->ext.size = sizeof(*p);
     p->ext.kind = TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW;
+}
+
+extern "C" void transcribe_parakeet_tdt_buffered_ext_init(struct transcribe_parakeet_tdt_buffered_ext * p) {
+    if (p == nullptr) {
+        return;
+    }
+    std::memset(p, 0, sizeof(*p));
+    p->ext.size = sizeof(*p);
+    p->ext.kind = TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED;
 }

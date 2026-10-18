@@ -84,3 +84,91 @@ fn parakeet_abort_invalid_window_and_model_lifetime_allow_reuse() {
         baseline.text.trim()
     );
 }
+
+#[test]
+#[ignore = "requires explicit public v2 GGUF and WAV fixture"]
+fn v2_buffered_owned_ranges_preserve_greedy_tokens_and_release_state() {
+    use transcribe_cpp::ParakeetTdtBufferedOptions;
+    transcribe_cpp::disable_logging();
+    transcribe_cpp::init_backends_default().unwrap();
+    let model = Model::load_with(
+        std::env::var("TRANSCRIBE_GRAIN_MODEL").unwrap(),
+        &ModelOptions {
+            backend: Backend::Cpu,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(model.variant(), "tdt-0.6b-v2");
+    let mut reader =
+        hound::WavReader::open(std::env::var("TRANSCRIBE_GRAIN_AUDIO").unwrap()).unwrap();
+    assert_eq!(
+        (reader.spec().sample_rate, reader.spec().channels),
+        (16000, 1)
+    );
+    let pcm: Vec<f32> = reader
+        .samples::<i16>()
+        .map(|s| s.unwrap() as f32 / 32768.0)
+        .collect();
+    let mut session = model
+        .session_with(&SessionOptions {
+            n_threads: 4,
+            ..Default::default()
+        })
+        .unwrap();
+    let ordinary = RunOptions {
+        timestamps: TimestampKind::Token,
+        ..Default::default()
+    };
+    let baseline = session.run(&pcm, &ordinary).unwrap();
+    let opts = |start, end, offset, reset, finalize| RunOptions {
+        family: Some(RunExtension::ParakeetTdtBuffered(
+            ParakeetTdtBufferedOptions {
+                decode_start_frame: start,
+                decode_end_frame: end,
+                timestamp_offset_frames: offset,
+                reset,
+                finalize,
+            },
+        )),
+        ..ordinary.clone()
+    };
+    let first = session.run(&pcm, &opts(0, 50, 0, true, false)).unwrap();
+    let second = session.run(&pcm, &opts(50, -1, 50, false, true)).unwrap();
+    let joined: Vec<_> = first.tokens.into_iter().chain(second.tokens).collect();
+    assert_eq!(
+        joined
+            .iter()
+            .map(|t| (t.id, t.t0_ms, t.t1_ms))
+            .collect::<Vec<_>>(),
+        baseline
+            .tokens
+            .iter()
+            .map(|t| (t.id, t.t0_ms, t.t1_ms))
+            .collect::<Vec<_>>()
+    );
+    // Finalization releases continuation; the old offset cannot be reused.
+    assert!(session.run(&pcm, &opts(50, -1, 50, false, true)).is_err());
+    session.run(&pcm, &opts(0, 50, 0, true, false)).unwrap();
+    // Reject discontinuity before re-encoding, then explicitly release state.
+    assert!(session.run(&pcm, &opts(50, -1, 51, false, true)).is_err());
+    session.reset().unwrap();
+    assert!(session.run(&pcm, &opts(50, -1, 50, false, true)).is_err());
+    let cancel = CancelToken::new();
+    session.set_cancel_token(&cancel);
+    cancel.cancel();
+    assert!(matches!(
+        session.run(&pcm, &opts(0, -1, 0, true, true)),
+        Err(Error::Aborted { .. })
+    ));
+    session.reset().unwrap();
+    cancel.reset();
+    let fresh = session.run(&pcm, &opts(0, -1, 0, true, true)).unwrap();
+    assert_eq!(fresh.tokens, baseline.tokens);
+    assert_eq!(fresh.text, baseline.text);
+    session.clear_cancel_token();
+    assert_eq!(
+        session.run(&pcm, &ordinary).unwrap().tokens,
+        baseline.tokens
+    );
+}

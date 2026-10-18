@@ -203,6 +203,28 @@ struct TdtToken {
     int   duration_frames = 0;
 };
 
+// NeMo buffered TDT continuation. The pending predictor output is retained on
+// blank steps; duration overshoot belongs to the next owned encoder region.
+// This contains no audio, model, backend or thread ownership.
+struct TdtBufferedState {
+    LstmState state;
+    LstmState next_state;
+    int       last_token      = -1;
+    int       step            = 0;
+    int       new_symbols     = 0;
+    int       next_frame      = 0;
+    bool      predictor_dirty = true;
+    bool      initialized     = false;
+};
+
+transcribe_status decode_tdt_buffered(const HostDecoderWeights & w,
+                                      const float *              enc_out,
+                                      int                        T_enc,
+                                      int                        d_enc,
+                                      int                        n_threads,
+                                      TdtBufferedState &         state,
+                                      std::vector<TdtToken> &    out_tokens);
+
 // Run TDT greedy decode end-to-end against an encoder output buffer.
 //
 // Inputs:

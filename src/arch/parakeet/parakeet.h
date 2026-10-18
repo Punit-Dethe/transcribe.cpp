@@ -303,11 +303,14 @@ struct ParakeetSession final : public transcribe_session {
     ggml_tensor * encoder_out = nullptr;
 
     // Per-context scratch reused across runs.
-    std::vector<float>    mel_buf;
-    std::vector<float>    pos_buf;
-    std::vector<float>    pos_div_term;
-    std::vector<float>    enc_host;
-    std::vector<TdtToken> raw_tokens;
+    std::vector<float>                mel_buf;
+    std::vector<float>                pos_buf;
+    std::vector<float>                pos_div_term;
+    std::vector<float>                enc_host;
+    std::vector<TdtToken>             raw_tokens;
+    // V2-only buffered run continuation. Released at finalization/reset/error;
+    // the existing session and model worker remain the sole inference owner.
+    std::unique_ptr<TdtBufferedState> tdt_buffered;
 
     // Multitalker bundle scratch: streaming-diarizer AOSC/FIFO state for
     // the embedded sortformer forward (diarize=ON runs only).

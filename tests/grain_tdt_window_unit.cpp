@@ -221,6 +221,128 @@ void check_compute_failures() {
     }
 }
 
+void check_buffered_continuation() {
+    // Every partition must equal one uninterrupted greedy decode on the SAME
+    // encoder frames. Nonzero LSTM biases make missing committed/pending state
+    // observable in both confidences and final recurrent state.
+    for (int token : { 0, 2, -1 }) {
+        for (int duration = 0; duration <= 4; ++duration) {
+            HostDecoderWeights w;
+            CHECK(make_weights(w, token < 0 ? 0 : token, duration));
+            w.tdt_max_symbols = 10;
+            std::vector<float> bias(16, 0.3f);
+            ggml_backend_tensor_set(w.predictor.lstm[0].g_b, bias.data(), 0, bias.size() * sizeof(float));
+            std::vector<float> pred(16, 0.05f);
+            ggml_backend_tensor_set(w.joint.g_pred_w, pred.data(), 0, pred.size() * sizeof(float));
+            std::vector<float> joint(static_cast<size_t>(w.joint.joint_n * 4), 0.0f);
+            for (int h = 0; h < 4; ++h) {
+                joint[h + (token < 0 ? 0 : token) * 4] = 0.5f;
+            }
+            ggml_backend_tensor_set(w.joint.gw_w, joint.data(), 0, joint.size() * sizeof(float));
+            std::vector<float> encoder(11 * 4, 0.0f);
+            if (token < 0) {
+                // Alternate token and blank decisions within one recording.
+                // Token-specific embeddings and nonzero recurrent state make
+                // a missing last-label or pending-predictor carry observable.
+                for (size_t i = 0; i < w.predictor.embed_w.size(); ++i) {
+                    w.predictor.embed_w[i] = static_cast<float>(i) * 0.03f;
+                }
+                std::vector<float> enc_w(16, 0.0f);
+                enc_w[0] = enc_w[5] = 1.0f;
+                ggml_backend_tensor_set(w.joint.g_enc_w, enc_w.data(), 0, enc_w.size() * sizeof(float));
+                std::fill(joint.begin(), joint.end(), 0.0f);
+                joint[0]         = 2.0f;
+                joint[2 * 4 + 1] = 2.0f;
+                ggml_backend_tensor_set(w.joint.gw_w, joint.data(), 0, joint.size() * sizeof(float));
+                std::vector<float> logits(w.joint.joint_n, -10.0f);
+                logits[0] = logits[2] = 0.0f;
+                logits[3 + duration]  = 10.0f;
+                ggml_backend_tensor_set(w.joint.gw_b, logits.data(), 0, logits.size() * sizeof(float));
+                for (int frame = 0; frame < 11; ++frame) {
+                    encoder[frame * 4 + ((frame % 3) == 1 ? 1 : 0)] = 3.0f;
+                }
+            }
+            std::vector<TdtToken> ordinary, whole;
+            TdtBufferedState      full;
+            CHECK(decode_tdt_greedy(w, encoder.data(), 11, 4, 1, ordinary) == TRANSCRIBE_OK);
+            CHECK(decode_tdt_buffered(w, encoder.data(), 11, 4, 1, full, whole) == TRANSCRIBE_OK);
+            CHECK(whole.size() == ordinary.size());
+            for (int width : { 1, 2, 3, 5, 10 }) {
+                TdtBufferedState      carry;
+                std::vector<TdtToken> joined;
+                for (int start = 0; start < 11; start += width) {
+                    const int             count = std::min(width, 11 - start);
+                    std::vector<TdtToken> part;
+                    CHECK(decode_tdt_buffered(w, encoder.data() + start * 4, count, 4, 1, carry, part) ==
+                          TRANSCRIBE_OK);
+                    for (auto t : part) {
+                        t.step_at_emit += start;
+                        joined.push_back(t);
+                    }
+                }
+                CHECK(joined.size() == ordinary.size());
+                for (size_t i = 0; i < joined.size() && i < ordinary.size(); ++i) {
+                    CHECK(joined[i].id == ordinary[i].id);
+                    CHECK(joined[i].step_at_emit == ordinary[i].step_at_emit);
+                    CHECK(joined[i].duration_frames == ordinary[i].duration_frames);
+                    CHECK(joined[i].p == ordinary[i].p);
+                }
+                CHECK(carry.next_frame == 11 && carry.step == full.step);
+                CHECK(carry.last_token == full.last_token && carry.new_symbols == full.new_symbols);
+                CHECK(carry.predictor_dirty == full.predictor_dirty);
+                CHECK(carry.state.h == full.state.h && carry.state.c == full.state.c);
+                CHECK(carry.next_state.h == full.next_state.h && carry.next_state.c == full.next_state.c);
+            }
+            for (int dispatch : { 1, 2, 3 }) {
+                TdtBufferedState      carry;
+                std::vector<TdtToken> out;
+                {
+                    ComputeFault fault(ggml_backend_get_device(w.predictor.lstm_w_backend), dispatch);
+                    CHECK(decode_tdt_buffered(w, encoder.data(), 11, 4, 1, carry, out) == TRANSCRIBE_ERR_BACKEND);
+                    CHECK(fault.triggered());
+                }
+                CHECK(!carry.initialized && carry.state.h.empty() && carry.next_state.h.empty());
+            }
+        }
+    }
+    ParakeetModel model;
+    model.arch                       = &arch;
+    model.variant                    = "tdt-0.6b-v2";
+    model.host_decoder.blank_id      = 1024;
+    model.host_decoder.tdt_durations = { 0, 1, 2, 3, 4 };
+    CHECK(
+        transcribe_model_accepts_ext_kind(&model, TRANSCRIBE_EXT_SLOT_RUN, TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED));
+    ParakeetSession session;
+    session.model        = &model;
+    session.tdt_buffered = std::make_unique<TdtBufferedState>();
+    arch.stream_reset(&session);
+    CHECK(!session.tdt_buffered);
+    transcribe_parakeet_tdt_buffered_ext ext;
+    transcribe_parakeet_tdt_buffered_ext_init(&ext);
+    transcribe_run_params params;
+    transcribe_run_params_init(&params);
+    params.family = &ext.ext;
+    CHECK(arch.run_validate(&session, &params) == TRANSCRIBE_ERR_INVALID_ARG);
+    ext.decode_end_frame = 125;
+    ext.reset            = true;
+    CHECK(arch.run_validate(&session, &params) == TRANSCRIBE_OK);
+    ext.timestamp_offset_frames = 1;
+    CHECK(arch.run_validate(&session, &params) == TRANSCRIBE_ERR_INVALID_ARG);
+    ext.reset = false;
+    CHECK(arch.run_validate(&session, &params) == TRANSCRIBE_ERR_INVALID_ARG);
+    session.tdt_buffered             = std::make_unique<TdtBufferedState>();
+    session.tdt_buffered->next_frame = 1;
+    CHECK(arch.run_validate(&session, &params) == TRANSCRIBE_OK);
+    ext.decode_end_frame = -1;
+    CHECK(arch.run_validate(&session, &params) == TRANSCRIBE_ERR_INVALID_ARG);
+    ext.finalize = true;
+    CHECK(arch.run_validate(&session, &params) == TRANSCRIBE_OK);
+    model.variant               = "tdt-0.6b-v3";
+    model.host_decoder.blank_id = 8192;
+    CHECK(
+        !transcribe_model_accepts_ext_kind(&model, TRANSCRIBE_EXT_SLOT_RUN, TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED));
+}
+
 void check_model_gates() {
     ParakeetModel model;
     model.arch                       = &arch;
@@ -274,6 +396,7 @@ void check_model_gates() {
 }  // namespace
 
 int main() {
+    check_buffered_continuation();
     check_model_gates();
     check_compute_failures();
     check_case(2, 0, 4, false, 0);      // Blank zero-duration must advance.

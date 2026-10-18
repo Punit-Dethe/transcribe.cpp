@@ -52,6 +52,16 @@ parameter; existing kinds keep their slot for life.
 | `0x54534653`   | `SFST` | `RUN`    | retired in 0.4 (was `TRANSCRIBE_EXT_KIND_SORTFORMER_STREAM`); never reuse | sortformer | - |
 | `0x52444653`   | `SFDR` | `DIARIZE_RUN` | `TRANSCRIBE_EXT_KIND_SORTFORMER_DIARIZE`   | sortformer   | `include/transcribe/sortformer.h` |
 
+| `0x57464B50` | `PKFW` | `RUN` | `TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW` | parakeet | `include/transcribe/parakeet.h` |
+| `0x46424B50` | `PKBF` | `RUN` | `TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED` | parakeet | `include/transcribe/parakeet.h` |
+
+PKBF is sequential v2-only buffered TDT, not a `run_batch` or streaming-slot
+extension. The encoder consumes the supplied context; only owned frames advance
+predictor state. Call `reset=true` at offset zero, use contiguous owned offsets,
+then `finalize=true` or reset the session. Finalization, decode errors and ordinary
+runs release continuation; a pre-dispatch validation rejection requires explicit
+session reset. The safe wrapper exposes `Session::reset` for scoped cleanup.
+
 Empty rows reserved for future allocations:
 
 | Kind value | FourCC | Slot | Symbol | Family | Header |

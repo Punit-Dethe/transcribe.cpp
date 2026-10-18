@@ -28,6 +28,7 @@
 #include "ggml-cpu.h"  // ggml_threadpool_params_default (rest via registry)
 #include "ggml.h"
 
+#include <limits>
 #include <thread>
 
 #if TRANSCRIBE_HAS_BLAS
@@ -43,6 +44,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -1016,12 +1018,13 @@ float token_confidence(const float * token_logits, int n_token_classes, std::vec
 // Greedy decode driver
 // ---------------------------------------------------------------------------
 
-transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
-                                    const float *              enc_out,
-                                    int                        T_enc,
-                                    int                        d_enc,
-                                    int                        n_threads,
-                                    std::vector<TdtToken> &    out_tokens) {
+static transcribe_status decode_tdt_impl(const HostDecoderWeights & w,
+                                         const float *              enc_out,
+                                         int                        T_enc,
+                                         int                        d_enc,
+                                         int                        n_threads,
+                                         std::vector<TdtToken> &    out_tokens,
+                                         TdtBufferedState *         continuation) {
     if (enc_out == nullptr || T_enc <= 0 || d_enc <= 0) {
         return TRANSCRIBE_ERR_INVALID_ARG;
     }
@@ -1061,10 +1064,15 @@ transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
     // predictor writes the new step's outputs. On a non-blank
     // emission we swap; on a blank emission we just discard the
     // contents of `next_state` (overwritten on the next iteration).
-    LstmState state;
-    LstmState next_state;
-    state.reset(n_layers, H);
-    next_state.reset(n_layers, H);
+    TdtBufferedState fresh;
+    auto &           carry = continuation != nullptr ? *continuation : fresh;
+    if (!carry.initialized) {
+        carry.state.reset(n_layers, H);
+        carry.next_state.reset(n_layers, H);
+        carry.initialized = true;
+    }
+    auto & state      = carry.state;
+    auto & next_state = carry.next_state;
 
     // Precompute encoder projections for all T_enc frames (decode-state
     // independent; one sgemm before the loop). See precompute_enc_proj_ggml.
@@ -1082,9 +1090,9 @@ transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
     std::vector<float> scratch_probs;
     std::vector<float> logits;
 
-    int last_token  = -1;  // sentinel: no previous token (start state)
-    int step        = 0;
-    int new_symbols = 0;
+    int & last_token  = carry.last_token;
+    int & step        = carry.step;
+    int & new_symbols = carry.new_symbols;
 
     // Runaway-protection cap; legitimate transcriptions never approach it.
     const int max_iters = 16 * T_enc + 1024;
@@ -1096,7 +1104,7 @@ transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
     // LSTM unroll and reuse the previous decoder_out; recompute on a
     // non-blank emission (state.swap + last_token change). Bit-exact with
     // the unconditional path.
-    bool predictor_dirty = true;
+    bool & predictor_dirty = carry.predictor_dirty;
 
     // See ParakeetHParams::tdt_global_symbol_budget.
     const bool global_budget   = w.tdt_global_symbol_budget;
@@ -1223,7 +1231,40 @@ transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
                 max_iters);
         return TRANSCRIBE_ERR_BACKEND;
     }
+    if (continuation != nullptr) {
+        // Preserve jumps past the owned boundary; do not re-decode those frames.
+        step -= T_enc;
+        carry.next_frame += T_enc;
+    }
     return TRANSCRIBE_OK;
+}
+
+transcribe_status decode_tdt_greedy(const HostDecoderWeights & w,
+                                    const float *              enc_out,
+                                    int                        T_enc,
+                                    int                        d_enc,
+                                    int                        n_threads,
+                                    std::vector<TdtToken> &    out_tokens) {
+    return decode_tdt_impl(w, enc_out, T_enc, d_enc, n_threads, out_tokens, nullptr);
+}
+
+transcribe_status decode_tdt_buffered(const HostDecoderWeights & w,
+                                      const float *              enc_out,
+                                      int                        T_enc,
+                                      int                        d_enc,
+                                      int                        n_threads,
+                                      TdtBufferedState &         state,
+                                      std::vector<TdtToken> &    out_tokens) {
+    if (w.head_kind != HostHeadKind::TDT || w.tdt_global_symbol_budget || T_enc <= 0 ||
+        state.next_frame > std::numeric_limits<int>::max() - T_enc) {
+        state = {};
+        return TRANSCRIBE_ERR_INVALID_ARG;
+    }
+    const auto status = decode_tdt_impl(w, enc_out, T_enc, d_enc, n_threads, out_tokens, &state);
+    if (status != TRANSCRIBE_OK) {
+        state = {};
+    }
+    return status;
 }
 
 transcribe_status decode_tdt_fluid_window(const HostDecoderWeights & w,
