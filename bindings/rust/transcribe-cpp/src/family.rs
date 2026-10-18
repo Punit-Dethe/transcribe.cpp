@@ -91,7 +91,7 @@ impl ParakeetTdtWindowOptions {
     pub const KIND: u32 = sys::TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW;
 }
 
-/// Stateful v2 buffered TDT. Encode the complete context buffer, decode only
+/// Stateful v2/v3 buffered TDT. Encode the complete context buffer, decode only
 /// the owned frame range, then retain predictor state for the next run.
 /// Start an utterance with `reset`, and release it with `finalize` or
 /// [`Session::reset`](crate::Session::reset). A final end of -1 consumes all

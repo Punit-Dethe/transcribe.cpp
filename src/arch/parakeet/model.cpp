@@ -3908,9 +3908,8 @@ void stream_reset(transcribe_session * session) {
     pc->stream_audio_input_samples = 0;
 }
 
-// Kind+slot probe. No run-slot extensions (always false on _RUN). On
-// _STREAM: ChunkedLimited takes PARAKEET_STREAM, ChunkedLimitedWithRc
-// takes PARAKEET_BUFFERED_STREAM, offline variants neither.
+// Run slots expose reviewed offline TDT window/buffered decoding. Stream
+// slots remain reserved for the separate cache-aware model architectures.
 bool accepts_ext_kind(const transcribe_model * model, transcribe_ext_slot slot, uint32_t kind) {
     if (model == nullptr) {
         return false;
@@ -3925,7 +3924,7 @@ bool accepts_ext_kind(const transcribe_model * model, transcribe_ext_slot slot, 
         const bool   reviewed_tdt =
             pm->host_decoder.head_kind == HostHeadKind::TDT && exact_fluid_blank && exact_fluid_durations;
         if (kind == TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED) {
-            return reviewed_tdt && pm->variant == "tdt-0.6b-v2" && !pm->host_decoder.tdt_global_symbol_budget;
+            return reviewed_tdt && !pm->host_decoder.tdt_global_symbol_budget;
         }
         return reviewed_tdt && kind == TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW;
     }

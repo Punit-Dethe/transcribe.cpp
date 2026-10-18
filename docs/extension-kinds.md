@@ -55,7 +55,7 @@ parameter; existing kinds keep their slot for life.
 | `0x57464B50` | `PKFW` | `RUN` | `TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW` | parakeet | `include/transcribe/parakeet.h` |
 | `0x46424B50` | `PKBF` | `RUN` | `TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED` | parakeet | `include/transcribe/parakeet.h` |
 
-PKBF is sequential v2-only buffered TDT, not a `run_batch` or streaming-slot
+PKBF is sequential reviewed v2/v3 buffered TDT, not a `run_batch` or streaming-slot
 extension. The encoder consumes the supplied context; only owned frames advance
 predictor state. Call `reset=true` at offset zero, use contiguous owned offsets,
 then `finalize=true` or reset the session. Finalization, decode errors and ordinary

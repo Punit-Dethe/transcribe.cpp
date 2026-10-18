@@ -86,8 +86,8 @@ fn parakeet_abort_invalid_window_and_model_lifetime_allow_reuse() {
 }
 
 #[test]
-#[ignore = "requires explicit public v2 GGUF and WAV fixture"]
-fn v2_buffered_owned_ranges_preserve_greedy_tokens_and_release_state() {
+#[ignore = "requires explicit public v2 or v3 GGUF and WAV fixture"]
+fn buffered_owned_ranges_preserve_greedy_tokens_and_release_state() {
     use transcribe_cpp::ParakeetTdtBufferedOptions;
     transcribe_cpp::disable_logging();
     transcribe_cpp::init_backends_default().unwrap();
@@ -99,7 +99,14 @@ fn v2_buffered_owned_ranges_preserve_greedy_tokens_and_release_state() {
         },
     )
     .unwrap();
-    assert_eq!(model.variant(), "tdt-0.6b-v2");
+    assert!(matches!(
+        model.variant().as_str(),
+        "tdt-0.6b-v2" | "tdt-0.6b-v3"
+    ));
+    assert!(model.accepts_ext(
+        transcribe_cpp::ExtSlot::Run,
+        ParakeetTdtBufferedOptions::KIND
+    ));
     let mut reader =
         hound::WavReader::open(std::env::var("TRANSCRIBE_GRAIN_AUDIO").unwrap()).unwrap();
     assert_eq!(

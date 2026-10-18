@@ -60,7 +60,8 @@ struct transcribe_parakeet_tdt_window_ext {
 /* Stamps the header; the zero frame range is intentionally invalid. */
 TRANSCRIBE_API void transcribe_parakeet_tdt_window_ext_init(struct transcribe_parakeet_tdt_window_ext * ext);
 
-/* V2-only stateful buffered decoding. Encoder input includes left/right
+/* Stateful buffered decoding for reviewed offline TDT v2/v3 models.
+ * Encoder input includes left/right
  * context; only [decode_start_frame, decode_end_frame) is decoded. -1 for
  * decode_end_frame is accepted only on finalize, consuming every remaining
  * real encoder frame. timestamp_offset_frames is the absolute OWNED start.
