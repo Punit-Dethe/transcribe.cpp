@@ -137,6 +137,10 @@ pub enum SortformerPreset {
     /// ~1.04 s lookahead; the real-time point (compute-heavy per audio
     /// second — many small windows).
     LowLatency,
+    /// ~0.64 s lookahead (Nemotron-3 Diarization only).
+    VeryLowLatency,
+    /// ~0.32 s lookahead (Nemotron-3 Diarization only).
+    UltraLowLatency,
 }
 
 impl SortformerPreset {
@@ -153,6 +157,12 @@ impl SortformerPreset {
             }
             SortformerPreset::LowLatency => {
                 sys::transcribe_sortformer_preset::TRANSCRIBE_SORTFORMER_PRESET_LOW_LATENCY
+            }
+            SortformerPreset::VeryLowLatency => {
+                sys::transcribe_sortformer_preset::TRANSCRIBE_SORTFORMER_PRESET_VERY_LOW_LATENCY
+            }
+            SortformerPreset::UltraLowLatency => {
+                sys::transcribe_sortformer_preset::TRANSCRIBE_SORTFORMER_PRESET_ULTRA_LOW_LATENCY
             }
         }
     }
@@ -203,6 +213,64 @@ impl DiarizeExtension {
                 unsafe { sys::transcribe_sortformer_diarize_ext_init(&mut e) };
                 set(&mut e.preset, o.preset.map(SortformerPreset::to_sys));
                 DiarizeExtRaw::Sortformer(Box::new(e))
+            }
+        }
+    }
+}
+
+/// Push-audio live diarization knobs (diarize-stream slot, Nemotron-3
+/// Diarization). Accepts `LowLatency` (the default when `None`),
+/// `VeryLowLatency` and `UltraLowLatency`; other presets are rejected at
+/// [`DiarizeSession::stream`](crate::DiarizeSession::stream) with
+/// [`Error::InvalidArgument`](crate::Error). Read rows from
+/// [`DiarizeStream::segments`](crate::DiarizeStream::segments) after each
+/// feed: a row whose `t1_ms` equals the feed's
+/// [`StreamUpdate::audio_committed_ms`](crate::StreamUpdate) is still open
+/// (the speaker is talking at the processed frontier); every other row is
+/// final. After `finalize` all rows are final and equal a
+/// [`DiarizeSession::run`](crate::DiarizeSession::run) at the same preset.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(default)
+)]
+pub struct SortformerLiveOptions {
+    pub preset: Option<SortformerPreset>,
+}
+
+/// A family extension for the diarize-stream slot
+/// ([`DiarizeSession::stream`](crate::DiarizeSession::stream)).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum DiarizeStreamExtension {
+    SortformerLive(SortformerLiveOptions),
+}
+
+/// Owns a materialized diarize-stream-slot C extension struct.
+pub(crate) enum DiarizeStreamExtRaw {
+    SortformerLive(Box<sys::transcribe_sortformer_live_ext>),
+}
+
+impl DiarizeStreamExtRaw {
+    pub(crate) fn ext_ptr(&self) -> *const sys::transcribe_ext {
+        match self {
+            DiarizeStreamExtRaw::SortformerLive(e) => {
+                (&**e) as *const sys::transcribe_sortformer_live_ext as *const sys::transcribe_ext
+            }
+        }
+    }
+}
+
+impl DiarizeStreamExtension {
+    pub(crate) fn materialize(&self) -> DiarizeStreamExtRaw {
+        match self {
+            DiarizeStreamExtension::SortformerLive(o) => {
+                let mut e: sys::transcribe_sortformer_live_ext = unsafe { std::mem::zeroed() };
+                unsafe { sys::transcribe_sortformer_live_ext_init(&mut e) };
+                set(&mut e.preset, o.preset.map(SortformerPreset::to_sys));
+                DiarizeStreamExtRaw::SortformerLive(Box::new(e))
             }
         }
     }

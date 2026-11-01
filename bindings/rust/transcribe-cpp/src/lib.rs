@@ -67,13 +67,16 @@ pub use backend::{
     init_backends_default, init_backends_with, BackendMask, Device, DeviceType,
 };
 pub use cancel::CancelToken;
-pub use diarize::{DiarizeInfo, DiarizeOptions, DiarizeSession, DiarizeSessionOptions};
+pub use diarize::{
+    DiarizeInfo, DiarizeOptions, DiarizeSession, DiarizeSessionOptions, DiarizeStream,
+    DiarizeStreamOptions, OwnedDiarizeStream,
+};
 pub use error::{Error, ErrorKind, ErrorReport, Result};
 pub use family::{
-    DiarizeExtension, MoonshineStreamingOptions, ParakeetBufferedStreamOptions,
-    ParakeetStreamOptions, ParakeetTdtBufferedOptions, ParakeetTdtWindowOptions, RunExtension,
-    SortformerDiarizeOptions, SortformerPreset, StreamExtension, VoxtralRealtimeStreamOptions,
-    WhisperRunOptions,
+    DiarizeExtension, DiarizeStreamExtension, MoonshineStreamingOptions,
+    ParakeetBufferedStreamOptions, ParakeetStreamOptions, ParakeetTdtBufferedOptions,
+    ParakeetTdtWindowOptions, RunExtension, SortformerDiarizeOptions, SortformerLiveOptions,
+    SortformerPreset, StreamExtension, VoxtralRealtimeStreamOptions, WhisperRunOptions,
 };
 pub use langid::{
     LangIdCandidate, LangIdInfo, LangIdOptions, LangIdResult, LangIdSession, LangIdSessionOptions,

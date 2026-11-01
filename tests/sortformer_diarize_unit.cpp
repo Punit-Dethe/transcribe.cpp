@@ -96,6 +96,9 @@ int main() {
     CHECK(transcribe_model_accepts_ext_kind(model, TRANSCRIBE_EXT_SLOT_DIARIZE_RUN,
                                             TRANSCRIBE_EXT_KIND_SORTFORMER_DIARIZE));
     CHECK(!transcribe_model_accepts_ext_kind(model, TRANSCRIBE_EXT_SLOT_RUN, TRANSCRIBE_EXT_KIND_SORTFORMER_DIARIZE));
+    // The live stream kind is Nemotron-3 Diarization only.
+    CHECK(!transcribe_model_accepts_ext_kind(model, TRANSCRIBE_EXT_SLOT_DIARIZE_STREAM,
+                                             TRANSCRIBE_EXT_KIND_SORTFORMER_LIVE));
 
     transcribe_diarize_session * dia = nullptr;
     CHECK(transcribe_diarize_session_init(model, nullptr, &dia) == TRANSCRIBE_OK);
@@ -131,6 +134,13 @@ int main() {
     transcribe_diarize_params_init(&dp);
     dp.family = &bad.ext;
     CHECK(transcribe_diarize_run(dia, pcm.data(), static_cast<int>(pcm.size()), &dp) == TRANSCRIBE_ERR_INVALID_ARG);
+    CHECK(transcribe_diarize_n_segments(dia) == n_before);
+    // The sub-second presets are Nemotron-3 operating points only.
+    bad.preset = TRANSCRIBE_SORTFORMER_PRESET_VERY_LOW_LATENCY;
+    CHECK(transcribe_diarize_run(dia, pcm.data(), static_cast<int>(pcm.size()), &dp) == TRANSCRIBE_ERR_INVALID_ARG);
+    CHECK(transcribe_diarize_n_segments(dia) == n_before);
+    // No live path on v2.1.
+    CHECK(transcribe_diarize_stream_begin(dia, nullptr) == TRANSCRIBE_ERR_NOT_IMPLEMENTED);
     CHECK(transcribe_diarize_n_segments(dia) == n_before);
 
     transcribe_diarize_session_free(dia);

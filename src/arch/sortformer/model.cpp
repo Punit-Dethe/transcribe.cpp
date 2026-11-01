@@ -1019,6 +1019,8 @@ static transcribe_status check_preset(int preset) {
         case TRANSCRIBE_SORTFORMER_PRESET_HIGH_LATENCY:
         case TRANSCRIBE_SORTFORMER_PRESET_LOW_LATENCY:
             return TRANSCRIBE_OK;
+        case TRANSCRIBE_SORTFORMER_PRESET_VERY_LOW_LATENCY:
+        case TRANSCRIBE_SORTFORMER_PRESET_ULTRA_LOW_LATENCY:  // Nemotron-3 operating points; no v2.1 geometry
         default:
             return TRANSCRIBE_ERR_INVALID_ARG;
     }
@@ -1085,7 +1087,7 @@ extern const Arch arch = {
 }  // namespace transcribe::sortformer
 
 // ---------------------------------------------------------------------------
-// Public sortformer extension init function (global scope, C linkage).
+// Public sortformer extension init functions (global scope, C linkage).
 // Defined here so transcribe.cpp stays family-agnostic; stamps the
 // transcribe_ext header (size + kind) and the preset default.
 // ---------------------------------------------------------------------------
@@ -1098,4 +1100,14 @@ extern "C" void transcribe_sortformer_diarize_ext_init(struct transcribe_sortfor
     p->ext.size = sizeof(*p);
     p->ext.kind = TRANSCRIBE_EXT_KIND_SORTFORMER_DIARIZE;
     p->preset   = TRANSCRIBE_SORTFORMER_PRESET_DEFAULT;
+}
+
+extern "C" void transcribe_sortformer_live_ext_init(struct transcribe_sortformer_live_ext * p) {
+    if (p == nullptr) {
+        return;
+    }
+    std::memset(p, 0, sizeof(*p));
+    p->ext.size = sizeof(*p);
+    p->ext.kind = TRANSCRIBE_EXT_KIND_SORTFORMER_LIVE;
+    p->preset   = TRANSCRIBE_SORTFORMER_PRESET_LOW_LATENCY;
 }

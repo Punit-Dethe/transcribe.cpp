@@ -69,6 +69,9 @@ add_library(transcribe
     arch/sortformer/model.cpp
     arch/sortformer/stream.cpp
     arch/sortformer/weights.cpp
+    arch/nemotron3_diar/model.cpp
+    arch/nemotron3_diar/stream.cpp
+    arch/nemotron3_diar/weights.cpp
     arch/ecapa_tdnn/graph.cpp
     arch/ecapa_tdnn/model.cpp
     arch/ecapa_tdnn/weights.cpp

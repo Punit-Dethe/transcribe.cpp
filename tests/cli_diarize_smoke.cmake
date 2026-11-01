@@ -1,6 +1,7 @@
 # transcribe-cli routes a DIARIZE model to the diarize path and prints speaker
 # segments for the 2-speaker oracle mix, writes them with -o, honours --repeat,
-# and refuses --batch and --stream-chunk-ms. Gated on TRANSCRIBE_SORTFORMER_GGUF (reported as skipped).
+# and refuses --batch, and --stream-chunk-ms on a diarizer without a live path
+# (Sortformer v2.1). Gated on TRANSCRIBE_SORTFORMER_GGUF (reported as skipped).
 
 if("$ENV{TRANSCRIBE_SORTFORMER_GGUF}" STREQUAL "")
     message("SKIP: TRANSCRIBE_SORTFORMER_GGUF not set")
@@ -51,6 +52,6 @@ execute_process(
     RESULT_VARIABLE rc
     OUTPUT_VARIABLE out
     ERROR_VARIABLE err)
-if(rc EQUAL 0 OR NOT err MATCHES "no streaming entry point")
+if(rc EQUAL 0 OR NOT err MATCHES "no push-audio entry point")
     message(FATAL_ERROR "--stream-chunk-ms on a diarize model: rc=${rc}\n${err}")
 endif()

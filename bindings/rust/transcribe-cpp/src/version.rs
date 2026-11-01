@@ -171,6 +171,7 @@ pub fn ensure_compatible() -> Result<()> {
                 ParakeetTdtWindowExt,
                 sys::transcribe_parakeet_tdt_window_ext
             ),
+            layout!(DiarizeStreamParams, sys::transcribe_diarize_stream_params),
         ];
         for (which, expected) in layouts {
             validate_layout(

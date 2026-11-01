@@ -11,7 +11,7 @@
 // Stable digest of the ABI surface (structs, enums, macros, layout,
 // prototypes), computed by the Python oracle and pinned here so a header
 // ABI change turns this binding's drift check red for conscious review.
-export const PUBLIC_HEADER_HASH = "19ba4aa29b4b28e4";
+export const PUBLIC_HEADER_HASH = "54c13920a14bb4b6";
 
 // === enum constants ===
 export const TRANSCRIBE_OK = 0;
@@ -67,6 +67,7 @@ export const TRANSCRIBE_ABI_VAD_RESULT = 27;
 export const TRANSCRIBE_ABI_VAD_SEGMENT = 28;
 export const TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT = 29;
 export const TRANSCRIBE_ABI_PARAKEET_TDT_BUFFERED_EXT = 30;
+export const TRANSCRIBE_ABI_DIARIZE_STREAM_PARAMS = 31;
 export const TRANSCRIBE_LOG_LEVEL_NONE = 0;
 export const TRANSCRIBE_LOG_LEVEL_INFO = 1;
 export const TRANSCRIBE_LOG_LEVEL_WARN = 2;
@@ -96,6 +97,7 @@ export const TRANSCRIBE_DIARIZE_MODE_ON = 2;
 export const TRANSCRIBE_EXT_SLOT_RUN = 0;
 export const TRANSCRIBE_EXT_SLOT_STREAM = 1;
 export const TRANSCRIBE_EXT_SLOT_DIARIZE_RUN = 2;
+export const TRANSCRIBE_EXT_SLOT_DIARIZE_STREAM = 3;
 export const TRANSCRIBE_BACKEND_AUTO = 0;
 export const TRANSCRIBE_BACKEND_CPU = 1;
 export const TRANSCRIBE_BACKEND_METAL = 2;
@@ -133,6 +135,8 @@ export const TRANSCRIBE_SORTFORMER_PRESET_DEFAULT = 0;
 export const TRANSCRIBE_SORTFORMER_PRESET_VERY_HIGH_LATENCY = 1;
 export const TRANSCRIBE_SORTFORMER_PRESET_HIGH_LATENCY = 2;
 export const TRANSCRIBE_SORTFORMER_PRESET_LOW_LATENCY = 3;
+export const TRANSCRIBE_SORTFORMER_PRESET_VERY_LOW_LATENCY = 4;
+export const TRANSCRIBE_SORTFORMER_PRESET_ULTRA_LOW_LATENCY = 5;
 export const TRANSCRIBE_WHISPER_PROMPT_FIRST_SEGMENT = 0;
 export const TRANSCRIBE_WHISPER_PROMPT_ALL_SEGMENTS = 1;
 
@@ -150,9 +154,10 @@ export const TRANSCRIBE_EXT_KIND_PARAKEET_STREAM = 1414744912;
 export const TRANSCRIBE_EXT_KIND_PARAKEET_TDT_BUFFERED = 1178749776;
 export const TRANSCRIBE_EXT_KIND_PARAKEET_TDT_WINDOW = 1464224592;
 export const TRANSCRIBE_EXT_KIND_SORTFORMER_DIARIZE = 1380206163;
+export const TRANSCRIBE_EXT_KIND_SORTFORMER_LIVE = 1447839315;
 export const TRANSCRIBE_EXT_KIND_VOXTRAL_REALTIME_STREAM = 1414746710;
 export const TRANSCRIBE_EXT_KIND_WHISPER_RUN = 1314015319;
-export const TRANSCRIBE_GRAIN_CONTRACT_REVISION = 5;
+export const TRANSCRIBE_GRAIN_CONTRACT_REVISION = 6;
 
 export interface StructLayout { size: number; align: number; offsets: Record<string, number>; }
 export const STRUCT_LAYOUT: Record<string, StructLayout> = {
@@ -175,6 +180,7 @@ export const STRUCT_LAYOUT: Record<string, StructLayout> = {
   'transcribe_diarize_info': { size: 16, align: 8, offsets: {'struct_size': 0, 'sample_rate': 8, 'max_speakers': 12} },
   'transcribe_diarize_session_params': { size: 16, align: 8, offsets: {'struct_size': 0, 'n_threads': 8} },
   'transcribe_diarize_params': { size: 16, align: 8, offsets: {'struct_size': 0, 'family': 8} },
+  'transcribe_diarize_stream_params': { size: 16, align: 8, offsets: {'struct_size': 0, 'family': 8} },
   'transcribe_langid_info': { size: 24, align: 8, offsets: {'struct_size': 0, 'sample_rate': 8, 'n_labels': 12, 'min_audio_ms': 16, 'max_audio_ms': 20} },
   'transcribe_langid_session_params': { size: 16, align: 8, offsets: {'struct_size': 0, 'n_threads': 8} },
   'transcribe_langid_params': { size: 24, align: 8, offsets: {'struct_size': 0, 'allowed': 8, 'n_allowed': 16} },
@@ -186,6 +192,7 @@ export const STRUCT_LAYOUT: Record<string, StructLayout> = {
   'transcribe_parakeet_stream_ext': { size: 24, align: 8, offsets: {'ext': 0, 'att_context_right': 16} },
   'transcribe_parakeet_buffered_stream_ext': { size: 32, align: 8, offsets: {'ext': 0, 'left_ms': 16, 'chunk_ms': 20, 'right_ms': 24} },
   'transcribe_sortformer_diarize_ext': { size: 24, align: 8, offsets: {'ext': 0, 'preset': 16} },
+  'transcribe_sortformer_live_ext': { size: 24, align: 8, offsets: {'ext': 0, 'preset': 16} },
   'transcribe_vad_info': { size: 16, align: 8, offsets: {'struct_size': 0, 'sample_rate': 8, 'frame_samples': 12} },
   'transcribe_vad_session_params': { size: 16, align: 8, offsets: {'struct_size': 0, 'n_threads': 8} },
   'transcribe_vad_params': { size: 40, align: 8, offsets: {'struct_size': 0, 'threshold': 8, 'neg_threshold': 16, 'min_speech_ms': 24, 'min_silence_ms': 28, 'speech_pad_ms': 32, 'max_speech_ms': 36} },
@@ -216,6 +223,7 @@ export const ABI_STRUCT_IDS: Record<string, number> = {
   'transcribe_diarize_info': 16,
   'transcribe_diarize_session_params': 17,
   'transcribe_diarize_params': 18,
+  'transcribe_diarize_stream_params': 31,
   'transcribe_langid_info': 19,
   'transcribe_langid_session_params': 20,
   'transcribe_langid_params': 21,
@@ -252,6 +260,7 @@ export function defineTypes(koffi: any): Record<string, any> {
   T['transcribe_diarize_info'] = koffi.struct({ struct_size: 'uint64_t', sample_rate: 'int32_t', max_speakers: 'int32_t' });
   T['transcribe_diarize_session_params'] = koffi.struct({ struct_size: 'uint64_t', n_threads: 'int32_t' });
   T['transcribe_diarize_params'] = koffi.struct({ struct_size: 'uint64_t', family: 'void *' });
+  T['transcribe_diarize_stream_params'] = koffi.struct({ struct_size: 'uint64_t', family: 'void *' });
   T['transcribe_langid_info'] = koffi.struct({ struct_size: 'uint64_t', sample_rate: 'int32_t', n_labels: 'int32_t', min_audio_ms: 'int32_t', max_audio_ms: 'int32_t' });
   T['transcribe_langid_session_params'] = koffi.struct({ struct_size: 'uint64_t', n_threads: 'int32_t' });
   T['transcribe_langid_params'] = koffi.struct({ struct_size: 'uint64_t', allowed: 'void *', n_allowed: 'int32_t' });
@@ -263,6 +272,7 @@ export function defineTypes(koffi: any): Record<string, any> {
   T['transcribe_parakeet_stream_ext'] = koffi.struct({ ext: T['transcribe_ext'], att_context_right: 'int32_t' });
   T['transcribe_parakeet_buffered_stream_ext'] = koffi.struct({ ext: T['transcribe_ext'], left_ms: 'int32_t', chunk_ms: 'int32_t', right_ms: 'int32_t' });
   T['transcribe_sortformer_diarize_ext'] = koffi.struct({ ext: T['transcribe_ext'], preset: 'int' });
+  T['transcribe_sortformer_live_ext'] = koffi.struct({ ext: T['transcribe_ext'], preset: 'int' });
   T['transcribe_vad_info'] = koffi.struct({ struct_size: 'uint64_t', sample_rate: 'int32_t', frame_samples: 'int32_t' });
   T['transcribe_vad_session_params'] = koffi.struct({ struct_size: 'uint64_t', n_threads: 'int32_t' });
   T['transcribe_vad_params'] = koffi.struct({ struct_size: 'uint64_t', threshold: 'double', neg_threshold: 'double', min_speech_ms: 'int32_t', min_silence_ms: 'int32_t', speech_pad_ms: 'int32_t', max_speech_ms: 'int32_t' });
@@ -315,6 +325,12 @@ export const FUNCTION_SIGNATURES: Record<string, FnSig> = {
   'transcribe_diarize_session_init': { ret: 'transcribe_status', args: ['struct transcribe_model *', 'const struct transcribe_diarize_session_params *', 'struct transcribe_diarize_session **'] },
   'transcribe_diarize_session_params_init': { ret: 'void', args: ['struct transcribe_diarize_session_params *'] },
   'transcribe_diarize_set_abort_callback': { ret: 'void', args: ['struct transcribe_diarize_session *', 'transcribe_abort_callback', 'void *'] },
+  'transcribe_diarize_stream_begin': { ret: 'transcribe_status', args: ['struct transcribe_diarize_session *', 'const struct transcribe_diarize_stream_params *'] },
+  'transcribe_diarize_stream_feed': { ret: 'transcribe_status', args: ['struct transcribe_diarize_session *', 'const float *', 'int', 'struct transcribe_stream_update *'] },
+  'transcribe_diarize_stream_finalize': { ret: 'transcribe_status', args: ['struct transcribe_diarize_session *', 'struct transcribe_stream_update *'] },
+  'transcribe_diarize_stream_get_state': { ret: 'enum transcribe_stream_state', args: ['const struct transcribe_diarize_session *'] },
+  'transcribe_diarize_stream_params_init': { ret: 'void', args: ['struct transcribe_diarize_stream_params *'] },
+  'transcribe_diarize_stream_reset': { ret: 'void', args: ['struct transcribe_diarize_session *'] },
   'transcribe_ext_check': { ret: 'transcribe_status', args: ['const struct transcribe_ext *', 'uint32_t', 'uint64_t'] },
   'transcribe_full_text': { ret: 'const char *', args: ['const struct transcribe_session *'] },
   'transcribe_get_model': { ret: 'const struct transcribe_model *', args: ['const struct transcribe_session *'] },
@@ -385,6 +401,7 @@ export const FUNCTION_SIGNATURES: Record<string, FnSig> = {
   'transcribe_session_params_init': { ret: 'void', args: ['struct transcribe_session_params *'] },
   'transcribe_set_abort_callback': { ret: 'void', args: ['struct transcribe_session *', 'transcribe_abort_callback', 'void *'] },
   'transcribe_sortformer_diarize_ext_init': { ret: 'void', args: ['struct transcribe_sortformer_diarize_ext *'] },
+  'transcribe_sortformer_live_ext_init': { ret: 'void', args: ['struct transcribe_sortformer_live_ext *'] },
   'transcribe_speaker_segment_init': { ret: 'void', args: ['struct transcribe_speaker_segment *'] },
   'transcribe_status_string': { ret: 'const char *', args: ['int'] },
   'transcribe_stream_begin': { ret: 'transcribe_status', args: ['struct transcribe_session *', 'const struct transcribe_run_params *', 'const struct transcribe_stream_params *'] },

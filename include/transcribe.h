@@ -359,9 +359,10 @@ TRANSCRIBE_API const char * transcribe_version_commit(void);
 
 /* Grain's additive native contract. Independent of the upstream version and
  * Git metadata; present in source-archive builds too. Bump the revision and
- * identity when the detokenize/PKFW semantics change. String results borrow
- * static storage. Queries allocate nothing and never initialize backends. */
-#define TRANSCRIBE_GRAIN_CONTRACT_REVISION 5
+ * identity when the detokenize/PKFW/PKBF or Nemotron-3 diarization surface
+ * changes. String results borrow static storage. Queries allocate nothing
+ * and never initialize backends. */
+#define TRANSCRIBE_GRAIN_CONTRACT_REVISION 6
 #define TRANSCRIBE_GRAIN_PATCH_ID          "grain-flow-tdt"
 TRANSCRIBE_API uint32_t     transcribe_grain_contract_revision(void);
 TRANSCRIBE_API const char * transcribe_grain_patch_id(void);
@@ -419,6 +420,8 @@ typedef enum {
     TRANSCRIBE_ABI_VAD_SEGMENT               = 28,
     TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT   = 29,
     TRANSCRIBE_ABI_PARAKEET_TDT_BUFFERED_EXT = 30,
+    /* include/transcribe/diarize.h push-audio stream (29 in Glimpse's fork) */
+    TRANSCRIBE_ABI_DIARIZE_STREAM_PARAMS     = 31,
 } transcribe_abi_struct;
 
 /* sizeof / alignof of the selected public struct, or 0 for an unknown id.
@@ -702,11 +705,13 @@ TRANSCRIBE_API transcribe_status transcribe_ext_check(const struct transcribe_ex
  */
 typedef enum {
     /* transcribe_run_params::family */
-    TRANSCRIBE_EXT_SLOT_RUN         = 0,
+    TRANSCRIBE_EXT_SLOT_RUN            = 0,
     /* transcribe_stream_params::family */
-    TRANSCRIBE_EXT_SLOT_STREAM      = 1,
+    TRANSCRIBE_EXT_SLOT_STREAM         = 1,
     /* transcribe_diarize_params::family (include/transcribe/diarize.h) */
-    TRANSCRIBE_EXT_SLOT_DIARIZE_RUN = 2,
+    TRANSCRIBE_EXT_SLOT_DIARIZE_RUN    = 2,
+    /* transcribe_diarize_stream_params::family (include/transcribe/diarize.h) */
+    TRANSCRIBE_EXT_SLOT_DIARIZE_STREAM = 3,
 } transcribe_ext_slot;
 
 /*

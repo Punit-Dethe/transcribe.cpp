@@ -2,11 +2,15 @@
  * include/transcribe/sortformer.h - Sortformer-family public extension.
  *
  * Includes transcribe.h; safe to include in C or C++ TUs. Sortformer
- * (diar_streaming_sortformer_4spk-v2.1) serves the DIARIZE role
- * (include/transcribe/diarize.h). Its one extension picks the streaming
+ * (diar_streaming_sortformer_4spk-v2.1) and Nemotron-3 Diarization
+ * (nemotron3_diar, Streaming Sortformer v3) serve the DIARIZE role
+ * (include/transcribe/diarize.h). The SFDR extension picks the streaming
  * operating point for transcribe_diarize_run; probe with
  * transcribe_model_accepts_ext_kind(model, TRANSCRIBE_EXT_SLOT_DIARIZE_RUN,
- * TRANSCRIBE_EXT_KIND_SORTFORMER_DIARIZE).
+ * TRANSCRIBE_EXT_KIND_SORTFORMER_DIARIZE). The SFLV extension picks it for
+ * push-audio live diarization (transcribe_diarize_stream_begin; Nemotron-3
+ * Diarization only); probe with (TRANSCRIBE_EXT_SLOT_DIARIZE_STREAM,
+ * TRANSCRIBE_EXT_KIND_SORTFORMER_LIVE).
  *
  * FourCC kinds are reserved in docs/extension-kinds.md.
  */
@@ -41,6 +45,14 @@ extern "C" {
  *                       compute per audio second than the larger chunks
  *                       (many small windows); see the family doc for
  *                       measured throughput.
+ *   VERY_LOW_LATENCY    ~0.64 s lookahead (Nemotron-3 Diarization only).
+ *   ULTRA_LOW_LATENCY   ~0.32 s lookahead (Nemotron-3 Diarization only).
+ *
+ * Nemotron-3 Diarization (arch nemotron3_diar) shares this extension. Its
+ * presets are NVIDIA's published v3 operating points: VERY_HIGH_LATENCY is
+ * 30.4 s (chunk 340 + rc 40), LOW_LATENCY 1.04 s (chunk 9 + rc 4); it has no
+ * HIGH_LATENCY point. A preset a model has no validated geometry for is
+ * rejected with TRANSCRIBE_ERR_INVALID_ARG.
  *
  * Values outside the enum range are rejected by transcribe_diarize_run
  * with TRANSCRIBE_ERR_INVALID_ARG before the previous result is cleared.
@@ -50,6 +62,8 @@ typedef enum {
     TRANSCRIBE_SORTFORMER_PRESET_VERY_HIGH_LATENCY = 1,
     TRANSCRIBE_SORTFORMER_PRESET_HIGH_LATENCY      = 2,
     TRANSCRIBE_SORTFORMER_PRESET_LOW_LATENCY       = 3,
+    TRANSCRIBE_SORTFORMER_PRESET_VERY_LOW_LATENCY  = 4,
+    TRANSCRIBE_SORTFORMER_PRESET_ULTRA_LOW_LATENCY = 5,
 } transcribe_sortformer_preset;
 
 /* 'SFDR' little-endian = 0x52444653 (DIARIZE_RUN slot) */
@@ -64,6 +78,45 @@ struct transcribe_sortformer_diarize_ext {
 
 /* Fills ext.size/kind and preset = DEFAULT. */
 TRANSCRIBE_API void transcribe_sortformer_diarize_ext_init(struct transcribe_sortformer_diarize_ext * ext);
+
+/* 'SFLV' little-endian = 0x564C4653 (DIARIZE_STREAM slot) */
+#define TRANSCRIBE_EXT_KIND_SORTFORMER_LIVE 0x564C4653u
+
+/*
+ * Push-audio live diarization (transcribe_diarize_stream_params::family,
+ * Nemotron-3 Diarization only).
+ *
+ * Feed 16 kHz mono f32 pieces of any size; a chunk runs as soon as the
+ * chunk plus its lookahead has arrived. Accepted presets are
+ * the real-time ones: LOW_LATENCY (the init default), VERY_LOW_LATENCY
+ * and ULTRA_LOW_LATENCY. DEFAULT, VERY_HIGH_LATENCY and HIGH_LATENCY are
+ * rejected with TRANSCRIBE_ERR_INVALID_ARG before the previous result is
+ * cleared; use transcribe_diarize_run with the SFDR extension for those. A
+ * stream begun without an extension runs LOW_LATENCY.
+ *
+ * After transcribe_diarize_stream_finalize the rows equal a
+ * transcribe_diarize_run at the same preset. During the stream they are
+ * readable after every feed:
+ *
+ *   - transcribe_stream_update::audio_committed_ms is the processed
+ *     frontier: the model's output is final up to there and nothing past
+ *     it is reported yet.
+ *   - A row with t1_ms < audio_committed_ms is closed and final.
+ *   - A row with t1_ms == audio_committed_ms is open: the speaker is still
+ *     talking at the frontier, and a later feed extends t1_ms (or closes
+ *     the row there). Open rows exist only mid-stream; after finalize
+ *     every row is final.
+ *
+ * Rows are ordered by speaker, then time, as for transcribe_diarize_run;
+ * result_changed / revision advance whenever the rows change.
+ */
+struct transcribe_sortformer_live_ext {
+    struct transcribe_ext        ext;
+    transcribe_sortformer_preset preset;
+};
+
+/* Fills ext.size/kind and preset = LOW_LATENCY. */
+TRANSCRIBE_API void transcribe_sortformer_live_ext_init(struct transcribe_sortformer_live_ext * ext);
 
 #ifdef __cplusplus
 }

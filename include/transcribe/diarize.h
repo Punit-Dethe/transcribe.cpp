@@ -84,6 +84,59 @@ TRANSCRIBE_API transcribe_status transcribe_diarize_get_segment(const struct tra
                                                                 int                                       i,
                                                                 struct transcribe_speaker_segment *       out);
 
+/*
+ * Push-audio live diarization, for models whose family accepts a kind on
+ * TRANSCRIBE_EXT_SLOT_DIARIZE_STREAM (Nemotron-3 Diarization). Feed 16 kHz
+ * mono float32 pieces of any size; the rows are readable through
+ * transcribe_diarize_n_segments / transcribe_diarize_get_segment after every
+ * feed, with the open / closed rule documented by the family extension
+ * (include/transcribe/sortformer.h). Updates use the ASR stream's
+ * transcribe_stream_update: audio_committed_ms is the processed frontier,
+ * input_received_ms the audio fed so far, revision / result_changed advance
+ * when the rows change, is_final is set by finalize.
+ *
+ * begin replaces the previous result once its params validate (a stream
+ * already ACTIVE, a bad struct or an unaccepted extension is an error
+ * before anything is touched); NOT_IMPLEMENTED when the model has no live
+ * path. feed / finalize need an ACTIVE stream; a failure inside them ends
+ * the stream (later feeds return INVALID_ARG) and leaves the rows produced
+ * so far. A feed with NaN / Inf is rejected and the stream stays ACTIVE.
+ * reset ends any stream and clears the rows. A transcribe_diarize_run
+ * during an ACTIVE stream returns INVALID_ARG.
+ */
+struct transcribe_diarize_stream_params {
+    uint64_t                      struct_size;
+    /* Typed family extension on TRANSCRIBE_EXT_SLOT_DIARIZE_STREAM, or NULL
+     * for the family's live default. */
+    const struct transcribe_ext * family;
+};
+
+TRANSCRIBE_API void transcribe_diarize_stream_params_init(struct transcribe_diarize_stream_params * params);
+
+/* params may be NULL for defaults. */
+TRANSCRIBE_API transcribe_status
+transcribe_diarize_stream_begin(struct transcribe_diarize_session *             session,
+                                const struct transcribe_diarize_stream_params * params);
+
+/* update may be NULL. n_samples must be > 0. */
+TRANSCRIBE_API transcribe_status transcribe_diarize_stream_feed(struct transcribe_diarize_session * session,
+                                                                const float *                       pcm,
+                                                                int                                 n_samples,
+                                                                struct transcribe_stream_update *   update);
+
+/* Flushes the buffered tail; every row is final afterwards. update may be NULL. */
+TRANSCRIBE_API transcribe_status transcribe_diarize_stream_finalize(struct transcribe_diarize_session * session,
+                                                                    struct transcribe_stream_update *   update);
+
+/* NULL is a no-op. */
+TRANSCRIBE_API void transcribe_diarize_stream_reset(struct transcribe_diarize_session * session);
+
+/* IDLE before any stream and after reset; ACTIVE between begin and finalize;
+ * FINISHED after finalize; FAILED after a feed / finalize error. IDLE for a
+ * NULL session. */
+TRANSCRIBE_API enum transcribe_stream_state transcribe_diarize_stream_get_state(
+    const struct transcribe_diarize_session * session);
+
 /* load_ms plus the last run's stage times. */
 TRANSCRIBE_API transcribe_status transcribe_diarize_get_timings(const struct transcribe_diarize_session * session,
                                                                 struct transcribe_timings *               out);

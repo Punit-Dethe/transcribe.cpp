@@ -336,6 +336,7 @@ pub enum AbiStruct {
     VadSegment,
     ParakeetTdtWindowExt,
     ParakeetTdtBufferedExt,
+    DiarizeStreamParams,
 }
 
 impl AbiStruct {
@@ -373,6 +374,7 @@ impl AbiStruct {
             AbiStruct::VadSegment => A::TRANSCRIBE_ABI_VAD_SEGMENT,
             AbiStruct::ParakeetTdtBufferedExt => A::TRANSCRIBE_ABI_PARAKEET_TDT_BUFFERED_EXT,
             AbiStruct::ParakeetTdtWindowExt => A::TRANSCRIBE_ABI_PARAKEET_TDT_WINDOW_EXT,
+            AbiStruct::DiarizeStreamParams => A::TRANSCRIBE_ABI_DIARIZE_STREAM_PARAMS,
         }
     }
 }
@@ -388,6 +390,8 @@ pub enum ExtSlot {
     Stream,
     /// `transcribe_diarize_params::family`.
     DiarizeRun,
+    /// `transcribe_diarize_stream_params::family`.
+    DiarizeStream,
 }
 
 impl ExtSlot {
@@ -397,6 +401,7 @@ impl ExtSlot {
             ExtSlot::Run => E::TRANSCRIBE_EXT_SLOT_RUN,
             ExtSlot::Stream => E::TRANSCRIBE_EXT_SLOT_STREAM,
             ExtSlot::DiarizeRun => E::TRANSCRIBE_EXT_SLOT_DIARIZE_RUN,
+            ExtSlot::DiarizeStream => E::TRANSCRIBE_EXT_SLOT_DIARIZE_STREAM,
         }
     }
 }
