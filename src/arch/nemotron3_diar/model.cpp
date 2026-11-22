@@ -614,13 +614,13 @@ transcribe_status resolve_live_params(const Model *                            m
         fam != nullptr ?
             transcribe::enum_field_raw(&reinterpret_cast<const transcribe_sortformer_live_ext *>(fam)->preset) :
             TRANSCRIBE_SORTFORMER_PRESET_LOW_LATENCY;
-    switch (preset) {
-        case TRANSCRIBE_SORTFORMER_PRESET_LOW_LATENCY:
-        case TRANSCRIBE_SORTFORMER_PRESET_VERY_LOW_LATENCY:
-        case TRANSCRIBE_SORTFORMER_PRESET_ULTRA_LOW_LATENCY:
-            break;
-        default:
-            return TRANSCRIBE_ERR_INVALID_ARG;
+    // [GRAIN] The file presets (DEFAULT / VERY_HIGH_LATENCY, 30 s lookahead) are
+    // accepted too: a long recording pushed through the stream in blocks
+    // reproduces transcribe_diarize_run at the same preset while holding only
+    // the speaker cache, FIFO and one chunk, instead of the whole file's mel
+    // and embeddings.
+    if (!known_preset(preset)) {
+        return TRANSCRIBE_ERR_INVALID_ARG;
     }
     return resolve_stream_params(m->hparams, static_cast<transcribe_sortformer_preset>(preset), out) ?
                TRANSCRIBE_OK :

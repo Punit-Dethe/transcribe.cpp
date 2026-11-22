@@ -6,9 +6,10 @@
 //
 //   1. The model accepts SFLV on DIARIZE_STREAM only, SFDR on DIARIZE_RUN
 //      only.
-//   2. Pre-clear rejection at begin: DEFAULT / VERY_HIGH / HIGH_LATENCY, an
+//   2. Pre-clear rejection at begin: HIGH_LATENCY (no v3 operating point), an
 //      out-of-range preset and the DIARIZE_RUN kind fail with INVALID_ARG and
-//      keep the previous rows.
+//      keep the previous rows. [GRAIN] The file presets DEFAULT /
+//      VERY_HIGH_LATENCY are accepted, so a long file can be pushed in blocks.
 //   3. Streamed rows after finalize equal transcribe_diarize_run at the same preset
 //      for feeds of 1 sample to 1 s, for every accepted preset and for the
 //      cache-compressing `small` validation geometry.
@@ -33,6 +34,17 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+
+#ifdef _WIN32
+// [GRAIN] POSIX setenv/unsetenv for the MSVC build of this test.
+static int setenv(const char * name, const char * value, int) {
+    return _putenv_s(name, value);
+}
+
+static int unsetenv(const char * name) {
+    return _putenv_s(name, "");
+}
+#endif
 
 namespace {
 
@@ -101,11 +113,14 @@ transcribe_status begin_preset(transcribe_diarize_session * session, transcribe_
 }
 
 // Feeds pcm in `piece`-sample pieces, checking every mid-stream snapshot
-// against the batch rows `want`, then finalizes.
+// against the batch rows `want`, then finalizes. `mid_rows`:
+// rows must appear before finalize (false for a file preset on a clip shorter
+// than one chunk plus its lookahead, which emits everything at finalize).
 std::vector<transcribe_speaker_segment> stream_pieces(transcribe_diarize_session *                    session,
                                                       const std::vector<float> &                      pcm,
                                                       size_t                                          piece,
-                                                      const std::vector<transcribe_speaker_segment> & want) {
+                                                      const std::vector<transcribe_speaker_segment> & want,
+                                                      bool                                            mid_rows = true) {
     int64_t                                 last_committed = 0;
     int                                     last_revision  = 0;
     std::vector<transcribe_speaker_segment> last_rows;
@@ -138,7 +153,7 @@ std::vector<transcribe_speaker_segment> stream_pieces(transcribe_diarize_session
             CHECK(found);
         }
     }
-    CHECK(saw_rows);
+    CHECK(saw_rows || !mid_rows);
     transcribe_stream_update fin;
     transcribe_stream_update_init(&fin);
     CHECK(transcribe_diarize_stream_finalize(session, &fin) == TRANSCRIBE_OK);
@@ -210,8 +225,7 @@ int main() {
 
     // Pre-clear rejection keeps the batch rows.
     for (transcribe_sortformer_preset preset :
-         { TRANSCRIBE_SORTFORMER_PRESET_DEFAULT, TRANSCRIBE_SORTFORMER_PRESET_VERY_HIGH_LATENCY,
-           TRANSCRIBE_SORTFORMER_PRESET_HIGH_LATENCY, static_cast<transcribe_sortformer_preset>(99) }) {
+         { TRANSCRIBE_SORTFORMER_PRESET_HIGH_LATENCY, static_cast<transcribe_sortformer_preset>(99) }) {
         CHECK(begin_preset(session, preset) == TRANSCRIBE_ERR_INVALID_ARG);
         CHECK(transcribe_diarize_stream_get_state(session) == TRANSCRIBE_STREAM_IDLE);
         CHECK(same_segments(read_segments(session), low));
@@ -231,6 +245,13 @@ int main() {
         const std::vector<transcribe_speaker_segment> want = run_batch(session, pcm, preset);
         CHECK(begin_preset(session, preset) == TRANSCRIBE_OK);
         CHECK(same_segments(stream_pieces(session, pcm, 480, want), want));
+    }
+    // [GRAIN] The file presets: a long file pushed in blocks equals one run.
+    for (transcribe_sortformer_preset preset :
+         { TRANSCRIBE_SORTFORMER_PRESET_VERY_HIGH_LATENCY, TRANSCRIBE_SORTFORMER_PRESET_DEFAULT }) {
+        const std::vector<transcribe_speaker_segment> want = run_batch(session, pcm, preset);
+        CHECK(begin_preset(session, preset) == TRANSCRIBE_OK);
+        CHECK(same_segments(stream_pieces(session, pcm, 16000, want, false), want));
     }
     ::setenv("TRANSCRIBE_NEMOTRON3_DIAR_PRESET", "small", 1);
     {
